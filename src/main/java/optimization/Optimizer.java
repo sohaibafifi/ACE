@@ -137,6 +137,21 @@ public abstract class Optimizer implements ObserverOnRuns {
 
 	public long gapBound;
 
+	/**
+	 * LP Relaxation for computing bounds via linear programming.
+	 */
+	private LPRelaxation lpRelaxation;
+
+	/**
+	 * Whether to use LP bounds for optimization (configurable).
+	 */
+	public boolean useLPBounds = true;
+	
+	/**
+	 * Counter for tracking nodes since last LP solve (for periodic LP solving).
+	 */
+	private int nodesSinceLastLP = 0;
+
 	public Optimizer(Problem pb, TypeOptimization opt, Optimizable clb, Optimizable cub) {
 		this.problem = pb;
 		control(opt != null && clb != null && cub != null);
@@ -146,6 +161,8 @@ public abstract class Optimizer implements ObserverOnRuns {
 		this.ctr = opt == MINIMIZE ? cub : clb; // the leading constraint (used at some places in other classes)
 		this.minBound = clb.limit();
 		this.maxBound = cub.limit();
+		// Read LP configuration from control options
+		this.useLPBounds = pb.head.control.optimization.useLPRelaxation;
 	}
 
 	public boolean isFinishedIf(long bound) {
@@ -166,12 +183,115 @@ public abstract class Optimizer implements ObserverOnRuns {
 		return val + gapBound;
 	}
 
+	/**
+	 * Flag to track if we're at the root node (no variable assignments made yet).
+	 * LP bounds computed at root are global; during search they are only local.
+	 */
+	private boolean atRootNode = true;
+	
+	/**
+	 * Computes and applies LP relaxation bound to tighten search bounds.
+	 * IMPORTANT: LP bounds computed during search (with reduced domains) are only valid
+	 * for the current search branch, NOT for the whole problem. Only use LP bounds
+	 * computed at the root node to update global minBound/maxBound.
+	 * 
+	 * For minimization, LP gives a lower bound; for maximization, an upper bound.
+	 */
+	public void computeLPBound() {
+		if (!useLPBounds) {
+			return;
+		}
+
+		// Create LP relaxation if not already done
+		if (lpRelaxation == null) {
+			lpRelaxation = new LPRelaxation(problem);
+		}
+
+		// Build LP model with current domains
+		lpRelaxation.buildModel();
+		
+		// Check if LP is viable (objective can be modeled)
+		if (!lpRelaxation.isViable()) {
+			Kit.log.config("LP disabled: objective type cannot be modeled in LP");
+			useLPBounds = false;
+			return;
+		}
+		
+		// Solve LP relaxation
+		Double lpBound = lpRelaxation.solve();
+
+		if (lpBound != null && atRootNode) {
+			// ONLY update global bounds if we're at the root node!
+			// LP bounds computed during search with reduced domains are only valid
+			// for the current subtree, not for the whole problem.
+			
+			// Safety check: LP bound should not contradict known feasible solutions
+			long bestKnown = problem.solver.solutions.bestBound;
+			
+			if (minimization) {
+				// For minimization, LP gives lower bound
+				long roundedBound = (long) Math.ceil(lpBound);
+				// Safety: LP lower bound should not exceed best known solution
+				if (!(bestKnown != Long.MAX_VALUE && roundedBound > bestKnown) && roundedBound > minBound) {
+					Kit.log.config("LP bound: " + roundedBound + " (was " + minBound + ")");
+					minBound = roundedBound;
+					clb.limit(minBound);
+				}
+			} else {
+				// For maximization, LP gives upper bound
+				long roundedBound = (long) Math.floor(lpBound);
+				// Safety: LP upper bound should not be below best known solution
+				if (!(bestKnown != Long.MIN_VALUE && roundedBound < bestKnown) && roundedBound < maxBound) {
+					Kit.log.config("LP bound: " + roundedBound + " (was " + maxBound + ")");
+					maxBound = roundedBound;
+					cub.limit(maxBound);
+				}
+			}
+		}
+		
+		// After first LP solve, we're no longer at root
+		atRootNode = false;
+		
+		// Reset node counter after LP solve
+		nodesSinceLastLP = 0;
+	}
+	
+	/**
+	 * Called periodically during search to potentially solve LP and tighten bounds.
+	 * Only solves LP if lpSolveFrequency is configured and enough nodes have passed.
+	 */
+	public void possiblyComputeLPBoundDuringSearch() {
+		int frequency = problem.head.control.optimization.lpSolveFrequency;
+		if (frequency <= 0 || !useLPBounds) {
+			return; // Periodic LP disabled or LP disabled entirely
+		}
+		
+		nodesSinceLastLP++;
+		if (nodesSinceLastLP >= frequency) {
+			computeLPBound();
+			// Note: nodesSinceLastLP is reset to 0 in computeLPBound()
+		}
+	}
+
 	protected abstract void shiftLimitWhenSuccess();
 
 	protected abstract void shiftLimitWhenFailure();
 
 	public final String stringBounds() {
-		return (minBound == Long.MIN_VALUE ? "-infty" : Output.numberFormat.format(minBound + gapBound) + ".." + (maxBound == Long.MAX_VALUE ? "+infty" :  Output.numberFormat.format(maxBound + gapBound)));
+		String boundsStr = (minBound == Long.MIN_VALUE ? "-infty" : Output.numberFormat.format(minBound + gapBound)) + ".." + 
+				(maxBound == Long.MAX_VALUE ? "+infty" : Output.numberFormat.format(maxBound + gapBound));
+
+		if (minBound != Long.MIN_VALUE && maxBound != Long.MAX_VALUE && minBound != maxBound) {
+			boundsStr += String.format(" (gap: %.2f%%)", 100f * (maxBound - minBound) / Math.abs(minBound));
+		}
+
+		// Check if optimality has been proven via LP bounds
+		if (useLPBounds && problem.solver != null && problem.solver.solutions.found > 0 
+				&& minBound == problem.solver.solutions.bestBound) {
+			boundsStr += " (OPTIMUM PROVEN)";
+		}
+		
+		return boundsStr;
 	}
 
 	@Override
@@ -327,7 +447,7 @@ public abstract class Optimizer implements ObserverOnRuns {
 			}
 		}
 		if (modified) {
-			Kit.log.fine("New Bounds updated from other workers : " + stringBounds());
+			Kit.log.config("New Bounds updated from other workers : " + stringBounds());
 			problem.solver.propagation.runAtNextRoot = true;
 		}
 		return modified;

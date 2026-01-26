@@ -493,6 +493,10 @@ public final class Control {
 		public final boolean replaceMinMaximum = addB("replaceMinMaximum", "rmm", true,
 				"Must we use a single aux variable when minimizing the maximum of trees ?");
 		public final int boundDescentCoeff = addI("boundDescentCoeff", "bdc", 1, "Bound descent coefficient");
+		public final boolean useLPRelaxation = addB("useLPRelaxation", "lp", true,
+				"Must we use LP relaxation for computing bounds and detecting optimality?");
+		public final int lpSolveFrequency = addI("lpSolveFrequency", "lpf", 0,
+				"LP solve frequency: 0=root only, N=every N nodes during search");
 
 		// public final boolean discardObjective = addB("discardObjective", "do", false, "Discard the objective if any");
 	}

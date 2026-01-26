@@ -49,6 +49,14 @@ public abstract class Count extends ConstraintGlobal implements TagAC {
 	protected final int value;
 
 	/**
+	 * Returns the value being counted.
+	 * @return the value
+	 */
+	public int getValue() {
+		return value;
+	}
+
+	/**
 	 * Builds a constraint Count for the specified problem
 	 * 
 	 * @param pb
@@ -97,6 +105,14 @@ public abstract class Count extends ConstraintGlobal implements TagAC {
 		 * The right-operand used in the comparison (i.e., the number of occurrences used as a limit).
 		 */
 		protected final int k;
+
+		/**
+		 * Returns the count limit k.
+		 * @return the limit k
+		 */
+		public int getK() {
+			return k;
+		}
 
 		/**
 		 * Builds a constraint Count for the specified problem, with a limit (k) defined by a constant

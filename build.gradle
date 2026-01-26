@@ -19,6 +19,7 @@ repositories {
 
 dependencies {
   implementation fileTree(dir: 'lib', include: ['*.jar']) 
+  implementation 'org.ojalgo:ojalgo:52.0.0'
   //testImplementation 'junit:junit:4.12'
 }
 

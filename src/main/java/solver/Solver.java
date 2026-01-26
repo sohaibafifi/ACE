@@ -1047,8 +1047,14 @@ public class Solver implements ObserverOnBacktracksSystematic {
 					boolean consistent = tryAssignment(x, a, false);
 					if (consistent == false)
 						manageContradiction(null);
-					else if (futVars.size() == 0)
-						foundSolution = true; // break;
+					else {
+						// Periodically solve LP to tighten bounds during search
+						if (problem.optimizer != null) {
+							problem.optimizer.possiblyComputeLPBoundDuringSearch();
+						}
+						if (futVars.size() == 0)
+							foundSolution = true; // break;
+					}
 				}
 			}
 			if (foundSolution) { // (futVars.size() == 0) {
@@ -1161,6 +1167,12 @@ public class Solver implements ObserverOnBacktracksSystematic {
 			profiler.initTime = head.stopwatch.wckTime();
 		if (!finished() && head.control.solving.enablePrepro)
 			doPrepro();
+		
+		// Compute LP bound at root node after preprocessing
+		if (!finished() && problem.optimizer != null) {
+			problem.optimizer.computeLPBound();
+		}
+		
 		if (!finished() && head.control.solving.enableSearch)
 			doSearch();
 		for (ObserverOnSolving observer : observersOnSolving)
