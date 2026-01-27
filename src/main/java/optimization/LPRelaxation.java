@@ -87,8 +87,8 @@ public class LPRelaxation {
                 nonLinearConstraints++;
             }
         }
-        
-        Kit.log.config("LP model: " + linearConstraints + " linear constraints, " + nonLinearConstraints + " non-linear (relaxed)");
+
+        // Kit.log.config("LP model: " + linearConstraints + " linear constraints, " + nonLinearConstraints + " non-linear (relaxed)");
 
         // Set objective (from Optimizer)
         setObjective();
@@ -212,20 +212,7 @@ public class LPRelaxation {
 
     /**
      * Adds a Count constraint (ExactlyK, AtMostK, AtLeastK) to the LP model.
-     * Only works for binary variables {0,1} with value 0 or 1.
-     *
-     * For ExactlyK(list, value, k):
-     *   - If value=1: sum(list) = k
-     *   - If value=0: sum(list) = n - k
-     *
-     * For AtMostK(list, value, k):
-     *   - If value=1: sum(list) <= k
-     *   - If value=0: sum(list) >= n - k
-     *
-     * For AtLeastK(list, value, k):
-     *   - If value=1: sum(list) >= k
-     *   - If value=0: sum(list) <= n - k
-     *
+     * TODO: move to Count class?
      * @param countCtr the count constraint
      * @param op the original operator ("==", "<=", or ">=") based on count type
      * @return true if constraint was added, false if not applicable
@@ -237,49 +224,103 @@ public class LPRelaxation {
         int k = countCtr.getK();
         int n = list.length;
 
-        // Check if all variables are binary {0,1}
-        // This is required for our linearization to be valid
+        boolean allBinary = true;
         for (variables.Variable var : list) {
             Domain dom = var.dom;
             if (dom.firstValue() < 0 || dom.lastValue() > 1) {
-                return false;  // Not binary, can't linearize
+                allBinary = false;
+                break;
             }
         }
 
-        // Check if value is 0 or 1 (binary)
-        if (value != 0 && value != 1) {
-            return false;  // Can't linearize for non-binary values
+        if (allBinary && (value == 0 || value == 1)) {
+            // Fast path for binary variables {0,1}
+            org.ojalgo.optimisation.Expression expr = model.addExpression("count_" + countCtr.num);
+            for (variables.Variable var : list) {
+                expr.set(lpVars[var.num], 1);
+            }
+
+            long limit;
+            String adjustedOp = op;
+            if (value == 1) {
+                limit = k;
+            } else {  // value == 0
+                limit = n - k;
+                if (op.equals("<=")) adjustedOp = ">=";
+                else if (op.equals(">=")) adjustedOp = "<=";
+            }
+
+            if (adjustedOp.equals("<=")) {
+                expr.upper(limit);
+            } else if (adjustedOp.equals(">=")) {
+                expr.lower(limit);
+            } else if (adjustedOp.equals("==")) {
+                expr.level(limit);
+            }
+
+            return true;
         }
 
-        // Build expression: sum of variables
-        org.ojalgo.optimisation.Expression expr = model.addExpression("count_" + countCtr.num);
-        for (variables.Variable var : list) {
-            expr.set(lpVars[var.num], 1);
+        // General case: reification for non-binary variables
+        org.ojalgo.optimisation.Expression countExpr = model.addExpression("count_" + countCtr.num);
+
+        for (int i = 0; i < list.length; i++) {
+            variables.Variable var = list[i];
+            Domain dom = var.dom;
+            double min = dom.firstValue();
+            double max = dom.lastValue();
+
+            Variable bLt = Variable.make("count_" + countCtr.num + "_lt_" + i).lower(0).upper(1);
+            Variable bEq = Variable.make("count_" + countCtr.num + "_eq_" + i).lower(0).upper(1);
+            Variable bGt = Variable.make("count_" + countCtr.num + "_gt_" + i).lower(0).upper(1);
+            model.addVariable(bLt);
+            model.addVariable(bEq);
+            model.addVariable(bGt);
+
+            org.ojalgo.optimisation.Expression splitExpr = model.addExpression("count_split_" + countCtr.num + "_" + i);
+            splitExpr.set(bLt, 1);
+            splitExpr.set(bEq, 1);
+            splitExpr.set(bGt, 1);
+            splitExpr.level(1);
+
+            double mLt = max - value + 1;
+            double mGt = value - min + 1;
+            double mEqUp = max - value;
+            double mEqLo = value - min;
+
+            org.ojalgo.optimisation.Expression ltExpr = model.addExpression("count_lt_" + countCtr.num + "_" + i);
+            ltExpr.set(lpVars[var.num], 1);
+            ltExpr.set(bLt, mLt);
+            ltExpr.upper(value - 1 + mLt);
+
+            org.ojalgo.optimisation.Expression gtExpr = model.addExpression("count_gt_" + countCtr.num + "_" + i);
+            gtExpr.set(lpVars[var.num], 1);
+            gtExpr.set(bGt, -mGt);
+            gtExpr.lower(value + 1 - mGt);
+
+            org.ojalgo.optimisation.Expression eqUpperExpr = model.addExpression("count_eq_up_" + countCtr.num + "_" + i);
+            eqUpperExpr.set(lpVars[var.num], 1);
+            eqUpperExpr.set(bEq, mEqUp);
+            eqUpperExpr.upper(value + mEqUp);
+
+            org.ojalgo.optimisation.Expression eqLowerExpr = model.addExpression("count_eq_lo_" + countCtr.num + "_" + i);
+            eqLowerExpr.set(lpVars[var.num], 1);
+            eqLowerExpr.set(bEq, -mEqLo);
+            eqLowerExpr.lower(value - mEqLo);
+
+            countExpr.set(bEq, 1);
         }
 
-        // Compute adjusted limit based on value
-        // If value=1: counting 1s, so sum directly gives count
-        // If value=0: counting 0s, so sum gives n - count
-        long limit;
-        String adjustedOp = op;
-
-        if (value == 1) {
-            limit = k;
-        } else {  // value == 0
-            limit = n - k;
-            // Flip the operator for value=0
-            if (op.equals("<=")) adjustedOp = ">=";
-            else if (op.equals(">=")) adjustedOp = "<=";
-            // "==" stays "=="
-        }
-
-        // Set constraint
-        if (adjustedOp.equals("<=")) {
-            expr.upper(limit);
-        } else if (adjustedOp.equals(">=")) {
-            expr.lower(limit);
-        } else if (adjustedOp.equals("==")) {
-            expr.level(limit);
+        switch (op) {
+            case "<=":
+                countExpr.upper(k);
+                break;
+            case ">=":
+                countExpr.lower(k);
+                break;
+            case "==":
+                countExpr.level(k);
+                break;
         }
 
         return true;
@@ -372,7 +413,7 @@ public class LPRelaxation {
             }
             
             long elapsed = System.currentTimeMillis() - startTime;
-            Kit.log.config("LP solve time: " + elapsed + "ms, state: " + result.getState());
+            // Kit.log.config("LP solve time: " + elapsed + "ms, state: " + result.getState());
             
             if (result.getState().isOptimal()) {
                 Double value = result.getValue();
