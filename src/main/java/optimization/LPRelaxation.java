@@ -14,6 +14,7 @@ import org.ojalgo.optimisation.ExpressionsBasedModel;
 import org.ojalgo.optimisation.Variable;
 import org.ojalgo.optimisation.Optimisation;
 
+import org.ojalgo.optimisation.solver.cplex.SolverCPLEX;
 import problem.Problem;
 import constraints.Constraint;
 import constraints.global.Sum;
@@ -21,43 +22,65 @@ import constraints.global.Count;
 import variables.Domain;
 import utility.Kit;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
+
 /**
  * LP Relaxation for computing lower/upper bounds to enable optimality detection.
  * This is a simple implementation that only handles
  * linear constraints (Sum constraints) and relaxes variable integrality.
+ *
+ * The model is built once and variable domains are updated at each node to avoid
+ * reconstructing the entire LP model repeatedly.
  */
 public class LPRelaxation {
-    
+
     private final Problem problem;
     private ExpressionsBasedModel model;
     private Variable[] lpVars;  // LP variables corresponding to CP variables
+    private boolean modelBuilt = false;  // Track if model structure has been built
+    private org.ojalgo.optimisation.Expression boundConstraint;  // Constraint for incumbent bound (enables pruning)
+    private final long lpTimeoutMs;
+    private int generatedCoverCuts;
+
 
     /**
      * Creates an LP relaxation for the given problem.
-     * 
+     *
      * @param problem the problem to create LP relaxation for
      */
     public LPRelaxation(Problem problem) {
         this.problem = problem;
+        this.lpTimeoutMs = problem.head.control.optimization.lpTimeoutMs;
     }
 
     /**
-     * Build LP model from current domains and linear constraints.
-     * This creates continuous variables with bounds from current domains
-     * and adds linear constraints (Sum constraints only).
+     * Build LP model structure (variables and constraints) once.
+     * This creates continuous variables and adds linear constraints.
+     * Variable bounds are set from initial domains and can be updated later via updateDomains().
      */
     public void buildModel() {
+        if (modelBuilt) {
+            // Model already built, just update domains
+            updateDomains();
+            return;
+        }
+
+        generatedCoverCuts = 0;
+
         model = new ExpressionsBasedModel();
         variables.Variable[] cpVars = problem.variables;
         lpVars = new Variable[cpVars.length];
 
-        // Create LP variables with current domain bounds
+        // Create LP variables with initial domain bounds
         for (int i = 0; i < cpVars.length; i++) {
             Domain dom = cpVars[i].dom;
-            // Use current domain bounds (tightened during search)
+            // Use current domain bounds
             double lowerBound = dom.size() > 0 ? dom.firstValue() : 0;
             double upperBound = dom.size() > 0 ? dom.lastValue() : 0;
-            
+
             lpVars[i] = Variable.make("x" + i)
                 .lower(lowerBound)
                 .upper(upperBound);
@@ -67,20 +90,20 @@ public class LPRelaxation {
         // Add linear constraints (Sum constraints for now)
         Constraint clb = problem.optimizer != null ? (Constraint) problem.optimizer.clb : null;
         Constraint cub = problem.optimizer != null ? (Constraint) problem.optimizer.cub : null;
-        
+
         int linearConstraints = 0;
         int nonLinearConstraints = 0;
-        
+
         for (Constraint c : problem.constraints) {
             if (c.ignored) {
                 continue;
             }
-            
+
             // Skip the optimizer's bound constraints
             if (c == clb || c == cub) {
                 continue;
             }
-            
+
             if (addConstraintIfLinear(c)) {
                 linearConstraints++;
             } else {
@@ -88,10 +111,97 @@ public class LPRelaxation {
             }
         }
 
-        // Kit.log.config("LP model: " + linearConstraints + " linear constraints, " + nonLinearConstraints + " non-linear (relaxed)");
+        Kit.log.config("LP model: " + linearConstraints + " linear constraints, " + nonLinearConstraints + " non-linear (relaxed)");
+        Kit.log.config("LP cuts: " + generatedCoverCuts);
 
         // Set objective (from Optimizer)
         setObjective();
+
+        // Add bound constraint for pruning (objective <= bestKnown for minimization, >= for maximization)
+        addBoundConstraint();
+
+        // Configure solver options (once)
+        configureSolver();
+
+        modelBuilt = true;
+    }
+
+    /**
+     * Adds a constraint on the objective to enable pruning based on incumbent solution.
+     * For minimization: objective <= maxBound (best known solution)
+     * For maximization: objective >= minBound (best known solution)
+     */
+    private void addBoundConstraint() {
+        if (problem.optimizer == null || !objectiveSet) {
+            return;
+        }
+
+        // Create a constraint that mirrors the objective expression
+        Optimizable objCtr = problem.optimizer.ctr;
+        boundConstraint = model.addExpression("incumbent_bound");
+
+        if (objCtr instanceof Sum.SumSimple.SumSimpleLE || objCtr instanceof Sum.SumSimple.SumSimpleGE) {
+            Sum.SumSimple sumCtr = (Sum.SumSimple) objCtr;
+            for (variables.Variable var : sumCtr.scp) {
+                boundConstraint.set(lpVars[var.num], 1);
+            }
+        } else if (objCtr instanceof Sum.SumWeighted.SumWeightedLE || objCtr instanceof Sum.SumWeighted.SumWeightedGE) {
+            Sum.SumWeighted sumCtr = (Sum.SumWeighted) objCtr;
+            int[] coeffs = sumCtr.icoeffs;
+            for (int i = 0; i < sumCtr.scp.length; i++) {
+                boundConstraint.set(lpVars[sumCtr.scp[i].num], coeffs[i]);
+            }
+        } else if (objCtr instanceof ObjectiveVariable) {
+            ObjectiveVariable objVar = (ObjectiveVariable) objCtr;
+            boundConstraint.set(lpVars[objVar.x.num], 1);
+        }
+
+        // Set initial bound from optimizer
+        if (problem.optimizer.minimization) {
+            // For minimization, we want objective <= maxBound (best known - 1)
+            boundConstraint.upper(problem.optimizer.maxBound);
+        } else {
+            // For maximization, we want objective >= minBound (best known + 1)
+            boundConstraint.lower(problem.optimizer.minBound);
+        }
+    }
+
+    /**
+     * Update the bound constraint when a new incumbent solution is found.
+     * Called by Optimizer when a better solution is discovered.
+     *
+     * @param newBound the new bound value (maxBound for minimization, minBound for maximization)
+     */
+    public void updateBound(long newBound) {
+        if (boundConstraint == null) {
+            return;
+        }
+
+        if (problem.optimizer.minimization) {
+            boundConstraint.upper(newBound);
+        } else {
+            boundConstraint.lower(newBound);
+        }
+    }
+
+    /**
+     * Update LP variable bounds from current CP variable domains.
+     * This is called at each search node instead of rebuilding the entire model.
+     */
+    public void updateDomains() {
+        if (model == null || lpVars == null) {
+            return;
+        }
+
+        variables.Variable[] cpVars = problem.variables;
+        for (int i = 0; i < cpVars.length; i++) {
+            Domain dom = cpVars[i].dom;
+            double lowerBound = dom.size() > 0 ? dom.firstValue() : 0;
+            double upperBound = dom.size() > 0 ? dom.lastValue() : 0;
+
+            lpVars[i].lower(lowerBound);
+            lpVars[i].upper(upperBound);
+        }
     }
 
     /**
@@ -124,7 +234,12 @@ public class LPRelaxation {
             Sum.SumWeighted.SumWeightedEQ sumCtr = (Sum.SumWeighted.SumWeightedEQ) c;
             addSumWeightedConstraint(sumCtr, "==");
             return true;
-        } else if (c instanceof Count.CountCst.ExactlyK) {
+        } else if (c instanceof Sum.SumSimple.SumSimpleEQ) {
+            Sum.SumSimple.SumSimpleEQ sumCtr = (Sum.SumSimple.SumSimpleEQ) c;
+            addSumSimpleConstraint(sumCtr, "==");
+            return true;
+        }
+        else if (c instanceof Count.CountCst.ExactlyK) {
             // ExactlyK: exactly k variables = value
             // For binary vars {0,1}: if value=1, sum=k; if value=0, sum=n-k
             return addCountConstraint((Count.CountCst) c, "==");
@@ -200,6 +315,7 @@ public class LPRelaxation {
         switch (op) {
             case "<=":
                 expr.upper(limit);
+                addKnapsackCoverCutIfRelevant(sumCtr);
                 break;
             case ">=":
                 expr.lower(limit);
@@ -208,6 +324,79 @@ public class LPRelaxation {
                 expr.level(limit);
                 break;
         }
+    }
+
+    private boolean isBinary01Domain(Domain dom) {
+        return dom.firstValue() >= 0 && dom.lastValue() <= 1;
+    }
+
+    /**
+     * Adds one static minimal-cover cut for eligible 0/1 knapsack constraints.
+     * This is a light-weight strengthening pass.
+     */
+    private void addKnapsackCoverCutIfRelevant(Sum.SumWeighted sumCtr) {
+        variables.Variable[] scp = sumCtr.scp;
+        int[] coeffs = sumCtr.icoeffs;
+        long rhs = sumCtr.limit();
+
+        if (rhs < 0 || scp.length <= 1) {
+            return;
+        }
+
+        long total = 0;
+        for (int i = 0; i < scp.length; i++) {
+            if (coeffs[i] <= 0 || !isBinary01Domain(scp[i].dom)) {
+                return;
+            }
+            total += coeffs[i];
+        }
+        if (total <= rhs) {
+            return;
+        }
+
+        List<Integer> ordered = new ArrayList<>();
+        for (int i = 0; i < scp.length; i++) {
+            ordered.add(i);
+        }
+        ordered.sort(Comparator.comparingInt((Integer i) -> coeffs[i]).reversed());
+
+        List<Integer> cover = new ArrayList<>();
+        long coverWeight = 0;
+        for (int i : ordered) {
+            cover.add(i);
+            coverWeight += coeffs[i];
+            if (coverWeight > rhs) {
+                break;
+            }
+        }
+        if (coverWeight <= rhs || cover.size() <= 1) {
+            return;
+        }
+
+        // Minimalise the cover greedily.
+        boolean changed;
+        do {
+            changed = false;
+            for (int p = 0; p < cover.size(); p++) {
+                int i = cover.get(p);
+                if (coverWeight - coeffs[i] > rhs) {
+                    coverWeight -= coeffs[i];
+                    cover.remove(p);
+                    changed = true;
+                    break;
+                }
+            }
+        } while (changed && cover.size() > 1);
+
+        if (cover.size() <= 1) {
+            return;
+        }
+
+        org.ojalgo.optimisation.Expression cut = model.addExpression("cover_" + sumCtr.num + "_" + generatedCoverCuts++);
+        for (int i : cover) {
+            cut.set(lpVars[scp[i].num], 1);
+        }
+        cut.upper(cover.size() - 1);
     }
 
     /**
@@ -250,12 +439,16 @@ public class LPRelaxation {
                 else if (op.equals(">=")) adjustedOp = "<=";
             }
 
-            if (adjustedOp.equals("<=")) {
-                expr.upper(limit);
-            } else if (adjustedOp.equals(">=")) {
-                expr.lower(limit);
-            } else if (adjustedOp.equals("==")) {
-                expr.level(limit);
+            switch (adjustedOp) {
+                case "<=":
+                    expr.upper(limit);
+                    break;
+                case ">=":
+                    expr.lower(limit);
+                    break;
+                case "==":
+                    expr.level(limit);
+                    break;
             }
 
             return true;
@@ -388,21 +581,41 @@ public class LPRelaxation {
     }
 
     /**
+     * Configure solver options. Called once during model building.
+     */
+    private void configureSolver() {
+        ExpressionsBasedModel.Integration<SolverCPLEX> integration = SolverCPLEX.INTEGRATION;
+        model.options.setConfigurator(integration);
+        if (problem.head.control.general.verbose > 0) {
+            model.options.progress(SolverCPLEX.class);
+            if (problem.head.control.general.verbose > 1) {
+                model.options.debug(SolverCPLEX.class);
+            }
+        }
+        // Set time limit to prevent LP from taking too long
+        // Abort LP solve when timeout is reached.
+        if (lpTimeoutMs > 0L) {
+            model.options.time_abort = lpTimeoutMs;
+        }
+
+        model.options.sparse = Boolean.TRUE;
+        // Relax integrality constraints (make all variables continuous)
+        model.relax();
+    }
+
+    /**
      * Solve the LP relaxation and return the bound value.
-     * 
+     * The model is reused across calls - only variable bounds are updated via updateDomains().
+     *
      * @return the LP bound value, or null if LP is infeasible/unbounded or objective not set
      */
     public Double solve() {
         if (model == null || !objectiveSet) {
             return null;
         }
-        
+
         try {
             long startTime = System.currentTimeMillis();
-            
-            // Set time limit to prevent LP from taking too long ?
-            // model.options.time_abort = 1_000L;  // milliseconds
-            // model.options.time_suffice = 500L;  // stop if good enough solution found
 
             // Minimize or maximize based on optimizer type
             Optimisation.Result result;
@@ -411,41 +624,35 @@ public class LPRelaxation {
             } else {
                 result = model.maximise();
             }
-            
+
             long elapsed = System.currentTimeMillis() - startTime;
-            // Kit.log.config("LP solve time: " + elapsed + "ms, state: " + result.getState());
-            
+            if (problem.head.control.general.verbose > 0)
+                Kit.log.config("LP solve time: " + elapsed + "ms, state: " + result.getState() + ((result.getState().isOptimal() ||  result.getState().isFeasible() || result.getState().isUnexplored()) ?  ", value: " + result.getValue() : ""));
+
             if (result.getState().isOptimal()) {
-                Double value = result.getValue();
-                freeMemory();  // Free LP model memory after root solve
-                return value;
+                return result.getValue();
             }
 
-            if (result.getState().isFeasible()){
-                // TODO : return LB/UB even if not optimal ?
+            if (result.getState().isFeasible() || result.getState().isUnexplored()) {
+                // Not optimal but we have information - return the best bound available
+                // For LP, when not optimal due to time limit, we return the current objective
+                // which serves as a valid bound (though possibly weaker than the true optimal)
+                // Note: For MIP, CPLEX would provide getBestObjValue() for the dual bound,
+                // but for pure LP relaxation, the current value is our best estimate
+                // return result.getValue();
+                return null;
             }
-            
-            // LP infeasible means problem is infeasible
-            freeMemory();  // Free LP model memory
+
+            // LP infeasible means the current search branch is infeasible
             return null;
-            
+
         } catch (Exception e) {
+            Kit.log.config("LP solver error: " + e.getMessage() + " (" + e.getClass().getSimpleName() + ")");
             // In case of any LP solver error, return null (no bound)
-            freeMemory();  // Free LP model memory
             return null;
         }
     }
-    
-    /**
-     * Free LP model memory to allow garbage collection.
-     * Called after root node LP solve since LP is only computed once.
-     */
-    public void freeMemory() {
-        model = null;
-        lpVars = null;
-        System.gc(); // Force garbage collection
-    }
-    
+
     /**
      * Check if LP relaxation is viable for this problem.
      * LP is not viable if the objective can't be modeled (e.g., SumViewWeighted).

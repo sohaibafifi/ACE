@@ -52,9 +52,17 @@ public abstract class Optimizer implements ObserverOnRuns {
 			if (minimization) {
 				maxBound = problem.solver.solutions.bestBound - problem.head.control.optimization.boundDescentCoeff;
 				cub.limit(maxBound);
+				// Update LP bound constraint for pruning
+				if (lpRelaxation != null) {
+					lpRelaxation.updateBound(maxBound);
+				}
 			} else {
 				minBound = problem.solver.solutions.bestBound + problem.head.control.optimization.boundDescentCoeff;
 				clb.limit(minBound);
+				// Update LP bound constraint for pruning
+				if (lpRelaxation != null) {
+					lpRelaxation.updateBound(minBound);
+				}
 			}
 			possiblyUpdateLocalBounds();
 			control(minBound == Long.MIN_VALUE || minBound - 1 <= maxBound || problem.head.control.optimization.ub != Long.MAX_VALUE,

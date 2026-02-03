@@ -497,6 +497,9 @@ public final class Control {
 				"Must we use LP relaxation for computing bounds and detecting optimality?");
 		public final int lpSolveFrequency = addI("lpSolveFrequency", "lpf", 0,
 				"LP solve frequency: 0=root only, N=every N nodes during search");
+		public final long lpTimeoutMs = addL("lpTimeoutMs", "lpt", 1_000L,
+				"Timeout in milliseconds for each LP solve (<=0 means no timeout)");
+
 
 		// public final boolean discardObjective = addB("discardObjective", "do", false, "Discard the objective if any");
 	}
