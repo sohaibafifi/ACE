@@ -231,8 +231,12 @@ public abstract class Optimizer implements ObserverOnRuns {
 			lpRelaxation = new LPRelaxation(problem);
 		}
 
-		// Build LP model with current domains
-		lpRelaxation.buildModel();
+		// Build LP model once; on subsequent calls only refresh variable domains
+		if (!lpRelaxation.isBuilt()) {
+			lpRelaxation.buildModel();
+		} else {
+			lpRelaxation.updateDomains();
+		}
 		
 		// Check if LP is viable (objective can be modeled)
 		if (!lpRelaxation.isViable()) {
@@ -332,7 +336,11 @@ public abstract class Optimizer implements ObserverOnRuns {
 
 		if (lpRelaxation == null)
 			lpRelaxation = new LPRelaxation(problem);
-		lpRelaxation.buildModel();
+		if (!lpRelaxation.isBuilt()) {
+			lpRelaxation.buildModel();
+		} else {
+			lpRelaxation.updateDomains();
+		}
 		if (!lpRelaxation.isViable()) {
 			useLPBounds = false;
 			return;

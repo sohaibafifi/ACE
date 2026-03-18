@@ -209,6 +209,10 @@ public final class LPRelaxation {
 		return objectiveSet && fullyLinearizedConstraints;
 	}
 
+	public boolean isBuilt() {
+		return modelBuilt;
+	}
+
 	public boolean isReducedCostFixingEnabled() {
 		return reducedCostFixingEnabled;
 	}
