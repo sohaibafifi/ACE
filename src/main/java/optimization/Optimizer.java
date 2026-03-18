@@ -401,8 +401,10 @@ public abstract class Optimizer implements ObserverOnRuns {
 		}
 
 		// Check if optimality has been proven via LP bounds
-		if (useLPBounds && problem.solver != null && problem.solver.solutions.found > 0 
-				&& minBound == problem.solver.solutions.bestBound) {
+		// For minimization: proven when LP lower bound (minBound) meets best solution.
+		// For maximization: proven when LP upper bound (maxBound) meets best solution.
+		if (useLPBounds && problem.solver != null && problem.solver.solutions.found > 0
+				&& (minimization ? minBound : maxBound) == problem.solver.solutions.bestBound) {
 			boundsStr += " (OPTIMUM PROVEN)";
 		}
 		
