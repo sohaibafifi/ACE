@@ -15,8 +15,8 @@ import java.lang.reflect.Field;
 import org.ojalgo.optimisation.Expression;
 
 import constraints.Constraint;
+import constraints.intension.Disjonctive;
 import constraints.intension.Primitive2;
-import constraints.intension.Reification;
 import constraints.intension.Reification.Reif2.Reif2Rel.Reif2EQ;
 import constraints.intension.Reification.Reif2.Reif2Rel.Reif2GE;
 import constraints.intension.Reification.Reif2.Reif2Rel.Reif2LE;
@@ -57,7 +57,7 @@ public class ReificationLinearizer implements ConstraintLinearizer {
             || c instanceof LogEqOr2
             || c instanceof LogEqAnd
             || c instanceof LogEqOr
-            || c instanceof Reification.DisjonctiveReified;
+            || c instanceof Disjonctive.DisjonctiveReified;
     }
 
     @Override
@@ -86,8 +86,8 @@ public class ReificationLinearizer implements ConstraintLinearizer {
             return addLogEqAnd((LogEqAnd) c, ctx);
         } else if (c instanceof LogEqOr) {
             return addLogEqOr((LogEqOr) c, ctx);
-        } else if (c instanceof Reification.DisjonctiveReified) {
-            return addDisjonctiveReified((Reification.DisjonctiveReified) c, ctx);
+        } else if (c instanceof Disjonctive.DisjonctiveReified) {
+            return addDisjonctiveReified((Disjonctive.DisjonctiveReified) c, ctx);
         }
         return false;
     }
@@ -317,7 +317,7 @@ public class ReificationLinearizer implements ConstraintLinearizer {
         return true;
     }
 
-    private boolean addDisjonctiveReified(Reification.DisjonctiveReified ctr, LinearizationContext ctx) {
+    private boolean addDisjonctiveReified(Disjonctive.DisjonctiveReified ctr, LinearizationContext ctx) {
         Variable x = ctr.scp[0];
         Variable y = ctr.scp[1];
         Variable z = ctr.scp[2];
@@ -325,8 +325,8 @@ public class ReificationLinearizer implements ConstraintLinearizer {
             return false;
         }
 
-        Integer w1 = readIntField(ctr, Reification.DisjonctiveReified.class, "w1");
-        Integer w2 = readIntField(ctr, Reification.DisjonctiveReified.class, "w2");
+        Integer w1 = readIntField(ctr, Disjonctive.DisjonctiveReified.class, "w1");
+        Integer w2 = readIntField(ctr, Disjonctive.DisjonctiveReified.class, "w2");
         if (w1 == null || w2 == null) {
             return false;
         }

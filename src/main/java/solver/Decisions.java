@@ -287,6 +287,7 @@ public final class Decisions implements ObserverOnRuns, ObserverOnAssignments {
 	 *            the solver to which this object is attached
 	 */
 	public Decisions(Solver solver) {
+		this.solver = solver;
 		Variable[] variables = solver.problem.variables;
 		int decoderNum = solver.head.control.solving.decoder;
 		if (decoderNum == 0) { // automatic

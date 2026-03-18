@@ -27,6 +27,7 @@ import constraints.Constraint;
 import constraints.global.Extremum.ExtremumCst.MaximumCst;
 import constraints.global.Extremum.ExtremumCst.MinimumCst;
 import constraints.global.Sum;
+import optimization.ObjectiveUnary.ObjectiveVariable;
 import optimization.linearization.AllDifferentLinearizer;
 import optimization.linearization.AllEqualLinearizer;
 import optimization.linearization.ConstraintLinearizer;
