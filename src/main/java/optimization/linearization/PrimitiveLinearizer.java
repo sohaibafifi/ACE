@@ -268,44 +268,51 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
 
     @Override
     public boolean linearize(Constraint c, LinearizationContext ctx) {
-        if (c instanceof Add2LE) {
-            return addAdd2LE((Primitive2) c, ctx);
-        } else if (c instanceof Add2GE) {
-            return addAdd2GE((Primitive2) c, ctx);
-        } else if (c instanceof Add2EQ) {
-            return addAdd2EQ((Primitive2) c, ctx);
-        } else if (c instanceof Sub2LE) {
-            return addSub2LE((Primitive2) c, ctx);
-        } else if (c instanceof Sub2GE) {
-            return addSub2GE((Primitive2) c, ctx);
-        } else if (c instanceof Sub2EQ) {
-            return addSub2EQ((Primitive2) c, ctx);
-        } else if (c instanceof Neg2EQ) {
-            return addNeg2EQ((Primitive2) c, ctx);
-        } else if (c instanceof Or2) {
-            return addOr2((Primitive2) c, ctx);
-        } else if (c instanceof Dist2LE) {
-            return addDist2LE((Primitive2) c, ctx);
-        } else if (c instanceof Dist2GE) {
-            return addDist2GE((Primitive2) c, ctx);
-        } else if (c instanceof Dist2EQ) {
-            return addDist2EQ((Primitive2) c, ctx);
-        } else if (c instanceof Dist2bEQ) {
-            return addDist2bEQ((Primitive2) c, ctx);
-        } else if (c instanceof Disjonctive) {
-            return addDisjonctive((Disjonctive) c, ctx);
+        try {
+            if (c instanceof Add2LE) {
+                return addAdd2LE((Primitive2) c, ctx);
+            } else if (c instanceof Add2GE) {
+                return addAdd2GE((Primitive2) c, ctx);
+            } else if (c instanceof Add2EQ) {
+                return addAdd2EQ((Primitive2) c, ctx);
+            } else if (c instanceof Sub2LE) {
+                return addSub2LE((Primitive2) c, ctx);
+            } else if (c instanceof Sub2GE) {
+                return addSub2GE((Primitive2) c, ctx);
+            } else if (c instanceof Sub2EQ) {
+                return addSub2EQ((Primitive2) c, ctx);
+            } else if (c instanceof Neg2EQ) {
+                return addNeg2EQ((Primitive2) c, ctx);
+            } else if (c instanceof Or2) {
+                return addOr2((Primitive2) c, ctx);
+            } else if (c instanceof Dist2LE) {
+                return addDist2LE((Primitive2) c, ctx);
+            } else if (c instanceof Dist2GE) {
+                return addDist2GE((Primitive2) c, ctx);
+            } else if (c instanceof Dist2EQ) {
+                return addDist2EQ((Primitive2) c, ctx);
+            } else if (c instanceof Dist2bEQ) {
+                return addDist2bEQ((Primitive2) c, ctx);
+            } else if (c instanceof Disjonctive) {
+                return addDisjonctive((Disjonctive) c, ctx);
+            }
+        } catch (RuntimeException e) {
+            // getK() or field access failed; skip this constraint rather than mis-modeling it
+            return false;
         }
         return false;
     }
 
-    // Helper to get k from Primitive2 via reflection
+    // Helper to get k from Primitive2 via reflection.
+    // Throws RuntimeException if k cannot be accessed, so callers return false
+    // rather than silently using 0 as a wrong RHS.
     private int getK(Primitive2 p) {
         try {
             java.lang.reflect.Field kField = Primitive2.class.getDeclaredField("k");
             kField.setAccessible(true);
             return (int) kField.get(p);
         } catch (Exception e) {
-            return 0;
+            throw new RuntimeException("Cannot extract k from " + p.getClass().getSimpleName(), e);
         }
     }
 
