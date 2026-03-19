@@ -266,8 +266,16 @@ public final class LPRelaxation {
 			long start = System.currentTimeMillis();
 			Optimisation.Result result = optimizeModel();
 			Optimisation.State state = result.getState();
-			if (!state.isOptimal())
+			if (!state.isOptimal()) {
+				long elapsed = System.currentTimeMillis() - start;
+				if (problem.head.control.general.verbose > 0) {
+					String location = atRoot ? "root" : "local";
+					double rawValue = result.getValue();
+					String value = Double.isFinite(rawValue) ? ", objective: " + rawValue : "";
+					Kit.log.config("LP solve (" + location + "): " + state + value + ", " + elapsed + "ms [bound ignored]");
+				}
 				return new SolveResult(state, Double.NaN, null, null);
+			}
 
 			double[] values = extractValues(result);
 			double[] reducedCosts = extractReducedCosts();
