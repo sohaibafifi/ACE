@@ -26,7 +26,7 @@ import variables.Variable;
  * Linearizer for Sum constraints (SumSimple and SumWeighted variants).
  *
  * Handles:
- * - SumSimpleLE, SumSimpleGE, SumSimpleEQ: sum(x_i) op limit
+ * - SumSimpleLE, SumSimpleGE, SumSimpleEQ, SumSimpleEQBoolean: sum(x_i) op limit
  * - SumWeightedLE, SumWeightedGE, SumWeightedEQ: sum(c_i * x_i) op limit
  *
  * Also generates knapsack cover cuts for eligible weighted sum constraints
@@ -125,6 +125,7 @@ public class SumLinearizer implements ConstraintLinearizer {
         return c instanceof Sum.SumSimple.SumSimpleLE
             || c instanceof Sum.SumSimple.SumSimpleGE
             || c instanceof Sum.SumSimple.SumSimpleEQ
+            || c instanceof Sum.SumSimple.SumSimpleEQBoolean
             || c instanceof Sum.SumWeighted.SumWeightedLE
             || c instanceof Sum.SumWeighted.SumWeightedGE
             || c instanceof Sum.SumWeighted.SumWeightedEQ;
@@ -139,6 +140,9 @@ public class SumLinearizer implements ConstraintLinearizer {
             addSumSimpleConstraint((Sum.SumSimple) c, ">=", ctx);
             return true;
         } else if (c instanceof Sum.SumSimple.SumSimpleEQ) {
+            addSumSimpleConstraint((Sum.SumSimple) c, "==", ctx);
+            return true;
+        } else if (c instanceof Sum.SumSimple.SumSimpleEQBoolean) {
             addSumSimpleConstraint((Sum.SumSimple) c, "==", ctx);
             return true;
         } else if (c instanceof Sum.SumWeighted.SumWeightedLE) {
