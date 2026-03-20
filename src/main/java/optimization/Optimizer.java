@@ -48,7 +48,6 @@ public abstract class Optimizer implements ObserverOnRuns {
 
 	@Override
 	public void beforeRun() {
-		atRootNode = true;
 		nodesSinceLastLP = 0;
 	}
 
@@ -209,12 +208,6 @@ public abstract class Optimizer implements ObserverOnRuns {
 	}
 
 	/**
-	 * Flag to track if we're at the root node (no variable assignments made yet).
-	 * LP bounds computed at root are global; during search they are only local.
-	 */
-	private boolean atRootNode = true;
-	
-	/**
 	 * Computes and applies LP relaxation bound to tighten search bounds.
 	 * IMPORTANT: LP bounds computed during search (with reduced domains) are only valid
 	 * for the current search branch, NOT for the whole problem. Only use LP bounds
@@ -226,6 +219,7 @@ public abstract class Optimizer implements ObserverOnRuns {
 		if (!useLPBounds) {
 			return true;
 		}
+		boolean atRootNode = isAtRootNode();
 
 		// Create LP relaxation if not already done
 		if (lpRelaxation == null) {
@@ -250,12 +244,10 @@ public abstract class Optimizer implements ObserverOnRuns {
 		LpSolveResult lpResult = lpRelaxation.solveWithReducedCostFixing(atRootNode, cutoff, minimization);
 		boolean consistent = true;
 		if (lpResult.isInfeasible()) {
-			atRootNode = false;
 			nodesSinceLastLP = 0;
 			return false;
 		}
 		if (!lpResult.hasObjectiveBound()) {
-			atRootNode = false;
 			nodesSinceLastLP = 0;
 			return true;
 		}
@@ -310,12 +302,13 @@ public abstract class Optimizer implements ObserverOnRuns {
 			}
 		}
 		
-		// After first LP solve, we're no longer at root
-		atRootNode = false;
-		
 		// Reset node counter after LP solve
 		nodesSinceLastLP = 0;
 		return consistent;
+	}
+
+	private boolean isAtRootNode() {
+		return problem.solver == null || problem.solver.depth() == 0;
 	}
 
 	public final void refineBoundsWithLpTree() {
