@@ -1,9 +1,17 @@
 apply plugin: 'java'
 
-base {
-    archivesName = "ACE"
-}
-version = '2.6'
+
+//java {
+//    toolchain {
+//        languageVersion = JavaLanguageVersion.of(11)
+//    }
+//}
+
+sourceCompatibility = 1.11
+targetCompatibility = 1.11
+
+archivesBaseName = "ACE"
+version = '2.5'
  
 repositories {
  mavenCentral()
@@ -14,10 +22,6 @@ dependencies {
     implementation 'org.scijava:native-lib-loader:2.5.0'
     runtimeOnly 'com.ustermetrics:highs4j-native:3.0.0-1.13.1'
     //testImplementation 'junit:junit:4.12'
-}
-
-tasks.withType(JavaCompile).configureEach {
-    options.release = 24
 }
 
 // with this statement below (jar { }), we build a fat jar, i.e. a jar with included dependencies
@@ -33,7 +37,6 @@ jar {
         configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
     }
  }
-
 
 test {
 	//executable = "/path/to/jdk/bin/java"
