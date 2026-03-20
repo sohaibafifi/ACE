@@ -492,8 +492,10 @@ public final class BenchmarkLpVsNoLp {
 		tokens.add("-v=-1");
 		tokens.add("-lp=" + mode.lpEnabled);
 		tokens.add("-lpf=" + (mode.searchLpEnabled ? searchLpFrequency : 0));
+		if (mode.lpEnabled)
+			tokens.add("-lpt=100s");
 		for (String arg : commonArgs) {
-			if (arg.startsWith("-lp=") || arg.startsWith("-lpf="))
+			if (arg.startsWith("-lp=") || arg.startsWith("-lpf=") || (mode.lpEnabled && arg.startsWith("-lpt=")))
 				continue;
 			tokens.add(arg);
 		}
