@@ -10,6 +10,8 @@
 
 package optimization;
 
+import optimization.lp.LpSolveResult;
+
 /**
  * Small LP-only tree search used to raise the root objective bound once a
  * finite incumbent is known. It is inspired by CP-SAT's {@code LbTreeSearch},
@@ -23,9 +25,9 @@ final class LpBoundTreeSearch {
 
 	private static final class BranchOutcome {
 		double bound;
-		LPRelaxation.SolveResult child;
+		LpSolveResult child;
 
-		BranchOutcome(double bound, LPRelaxation.SolveResult child) {
+		BranchOutcome(double bound, LpSolveResult child) {
 			this.bound = bound;
 			this.child = child;
 		}
@@ -65,7 +67,7 @@ final class LpBoundTreeSearch {
 		if (nodeLimit <= 0)
 			return null;
 
-		LPRelaxation.SolveResult root = relaxation.solve(false);
+		LpSolveResult root = relaxation.solve(false);
 		if (root.isInfeasible())
 			return infeasibleRoundedBound();
 		if (!root.hasObjectiveBound())
@@ -78,9 +80,11 @@ final class LpBoundTreeSearch {
 		return relaxation.roundObjectiveBound(bound, minimization);
 	}
 
-	private double explore(LPRelaxation.SolveResult node) {
-		double currentBound = node.objectiveValue;
+	private double explore(LpSolveResult node) {
+		double currentBound = node.objectiveBound;
 		if (exploredNodes >= nodeLimit || prunesAgainstIncumbent(currentBound))
+			return currentBound;
+		if (node.variableValues == null)
 			return currentBound;
 
 		BranchingDecision decision = pickFractionalVariable(node.variableValues);
@@ -118,7 +122,7 @@ final class LpBoundTreeSearch {
 			return new BranchOutcome(fallbackBound, null);
 
 		relaxation.setVariableBounds(variable, newLower, newUpper);
-		LPRelaxation.SolveResult child = relaxation.solve(false);
+		LpSolveResult child = relaxation.solve(false);
 		exploredNodes++;
 		relaxation.setVariableBounds(variable, oldLower, oldUpper);
 
@@ -126,7 +130,7 @@ final class LpBoundTreeSearch {
 			return new BranchOutcome(infeasibleBound(), null);
 		if (!child.hasObjectiveBound())
 			return new BranchOutcome(fallbackBound, null);
-		return new BranchOutcome(child.objectiveValue, child);
+		return new BranchOutcome(child.objectiveBound, child);
 	}
 
 	private BranchingDecision pickFractionalVariable(double[] values) {

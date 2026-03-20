@@ -12,8 +12,6 @@ package optimization.linearization;
 
 import java.lang.reflect.Field;
 
-import org.ojalgo.optimisation.Expression;
-
 import constraints.Constraint;
 import constraints.intension.Disjonctive;
 import constraints.intension.Primitive2;
@@ -29,6 +27,7 @@ import constraints.intension.Reification.ReifLogic.ReifLogic2.LogEqAnd2;
 import constraints.intension.Reification.ReifLogic.ReifLogic2.LogEqOr2;
 import constraints.intension.Reification.ReifLogic.ReifLogicn.LogEqAnd;
 import constraints.intension.Reification.ReifLogic.ReifLogicn.LogEqOr;
+import optimization.lp.LpExpression;
 import variables.Variable;
 
 /**
@@ -129,13 +128,13 @@ public class ReificationLinearizer implements ConstraintLinearizer {
         double kk = k.doubleValue();
 
         // x = 1 => y <= k
-        Expression ub = ctx.addExpression("reif2EQ_ub_" + ctr.num);
+        LpExpression ub = ctx.addExpression("reif2EQ_ub_" + ctr.num);
         ub.set(ctx.getLpVar(y), 1);
         ub.set(ctx.getLpVar(x), u - kk);
         ub.upper(u);
 
         // x = 1 => y >= k
-        Expression lb = ctx.addExpression("reif2EQ_lb_" + ctr.num);
+        LpExpression lb = ctx.addExpression("reif2EQ_lb_" + ctr.num);
         lb.set(ctx.getLpVar(y), 1);
         lb.set(ctx.getLpVar(x), -(kk - l));
         lb.lower(l);
@@ -160,13 +159,13 @@ public class ReificationLinearizer implements ConstraintLinearizer {
         double kk = k.doubleValue();
 
         // x = 0 => y <= k
-        Expression ub = ctx.addExpression("reif2NE_ub_" + ctr.num);
+        LpExpression ub = ctx.addExpression("reif2NE_ub_" + ctr.num);
         ub.set(ctx.getLpVar(y), 1);
         ub.set(ctx.getLpVar(x), -(u - kk));
         ub.upper(kk);
 
         // x = 0 => y >= k
-        Expression lb = ctx.addExpression("reif2NE_lb_" + ctr.num);
+        LpExpression lb = ctx.addExpression("reif2NE_lb_" + ctr.num);
         lb.set(ctx.getLpVar(y), 1);
         lb.set(ctx.getLpVar(x), kk - l);
         lb.lower(kk);
@@ -214,19 +213,19 @@ public class ReificationLinearizer implements ConstraintLinearizer {
         Variable x = scp[0], y = scp[1], z = scp[2];
 
         // x <= y
-        Expression c1 = ctx.addExpression("logAnd2_c1_" + ctr.num);
+        LpExpression c1 = ctx.addExpression("logAnd2_c1_" + ctr.num);
         c1.set(ctx.getLpVar(x), 1);
         c1.set(ctx.getLpVar(y), -1);
         c1.upper(0);
 
         // x <= z
-        Expression c2 = ctx.addExpression("logAnd2_c2_" + ctr.num);
+        LpExpression c2 = ctx.addExpression("logAnd2_c2_" + ctr.num);
         c2.set(ctx.getLpVar(x), 1);
         c2.set(ctx.getLpVar(z), -1);
         c2.upper(0);
 
         // x >= y + z - 1  <=>  -x + y + z <= 1
-        Expression c3 = ctx.addExpression("logAnd2_c3_" + ctr.num);
+        LpExpression c3 = ctx.addExpression("logAnd2_c3_" + ctr.num);
         c3.set(ctx.getLpVar(x), -1);
         c3.set(ctx.getLpVar(y), 1);
         c3.set(ctx.getLpVar(z), 1);
@@ -243,19 +242,19 @@ public class ReificationLinearizer implements ConstraintLinearizer {
         Variable x = scp[0], y = scp[1], z = scp[2];
 
         // x >= y
-        Expression c1 = ctx.addExpression("logOr2_c1_" + ctr.num);
+        LpExpression c1 = ctx.addExpression("logOr2_c1_" + ctr.num);
         c1.set(ctx.getLpVar(x), 1);
         c1.set(ctx.getLpVar(y), -1);
         c1.lower(0);
 
         // x >= z
-        Expression c2 = ctx.addExpression("logOr2_c2_" + ctr.num);
+        LpExpression c2 = ctx.addExpression("logOr2_c2_" + ctr.num);
         c2.set(ctx.getLpVar(x), 1);
         c2.set(ctx.getLpVar(z), -1);
         c2.lower(0);
 
         // x <= y + z  <=>  x - y - z <= 0
-        Expression c3 = ctx.addExpression("logOr2_c3_" + ctr.num);
+        LpExpression c3 = ctx.addExpression("logOr2_c3_" + ctr.num);
         c3.set(ctx.getLpVar(x), 1);
         c3.set(ctx.getLpVar(y), -1);
         c3.set(ctx.getLpVar(z), -1);
@@ -274,14 +273,14 @@ public class ReificationLinearizer implements ConstraintLinearizer {
 
         // x <= yi for all i
         for (int i = 1; i < scp.length; i++) {
-            Expression ub = ctx.addExpression("logAnd_c1_" + ctr.num + "_" + i);
+            LpExpression ub = ctx.addExpression("logAnd_c1_" + ctr.num + "_" + i);
             ub.set(ctx.getLpVar(x), 1);
             ub.set(ctx.getLpVar(scp[i]), -1);
             ub.upper(0);
         }
 
         // x >= sum(yi) - (n-1)  <=>  -x + sum(yi) <= n-1
-        Expression lb = ctx.addExpression("logAnd_c2_" + ctr.num);
+        LpExpression lb = ctx.addExpression("logAnd_c2_" + ctr.num);
         lb.set(ctx.getLpVar(x), -1);
         for (int i = 1; i < scp.length; i++) {
             lb.set(ctx.getLpVar(scp[i]), 1);
@@ -300,14 +299,14 @@ public class ReificationLinearizer implements ConstraintLinearizer {
 
         // x >= yi for all i
         for (int i = 1; i < scp.length; i++) {
-            Expression lb = ctx.addExpression("logOr_c1_" + ctr.num + "_" + i);
+            LpExpression lb = ctx.addExpression("logOr_c1_" + ctr.num + "_" + i);
             lb.set(ctx.getLpVar(x), 1);
             lb.set(ctx.getLpVar(scp[i]), -1);
             lb.lower(0);
         }
 
         // x <= sum(yi)  <=>  x - sum(yi) <= 0
-        Expression ub = ctx.addExpression("logOr_c2_" + ctr.num);
+        LpExpression ub = ctx.addExpression("logOr_c2_" + ctr.num);
         ub.set(ctx.getLpVar(x), 1);
         for (int i = 1; i < scp.length; i++) {
             ub.set(ctx.getLpVar(scp[i]), -1);
@@ -336,7 +335,7 @@ public class ReificationLinearizer implements ConstraintLinearizer {
 
         // z = 0 => x + w1 <= y
         // x + w1 <= y + M1*z  <=>  x - y - M1*z <= -w1
-        Expression c1 = ctx.addExpression("disjReif_c1_" + ctr.num);
+        LpExpression c1 = ctx.addExpression("disjReif_c1_" + ctr.num);
         c1.set(ctx.getLpVar(x), 1);
         c1.set(ctx.getLpVar(y), -1);
         c1.set(ctx.getLpVar(z), -m1);
@@ -344,7 +343,7 @@ public class ReificationLinearizer implements ConstraintLinearizer {
 
         // z = 1 => y + w2 <= x
         // y + w2 <= x + M2*(1-z)  <=>  y - x + M2*z <= M2 - w2
-        Expression c2 = ctx.addExpression("disjReif_c2_" + ctr.num);
+        LpExpression c2 = ctx.addExpression("disjReif_c2_" + ctr.num);
         c2.set(ctx.getLpVar(y), 1);
         c2.set(ctx.getLpVar(x), -1);
         c2.set(ctx.getLpVar(z), m2);
@@ -361,13 +360,13 @@ public class ReificationLinearizer implements ConstraintLinearizer {
         double u = y.dom.lastValue();
 
         // y <= t + (u-t)*(1-x)  <=>  y + (u-t)*x <= u
-        Expression ub = ctx.addExpression(name + "_ub");
+        LpExpression ub = ctx.addExpression(name + "_ub");
         ub.set(ctx.getLpVar(y), 1);
         ub.set(ctx.getLpVar(x), u - t);
         ub.upper(u);
 
         // y >= t+1 - (t+1-l)*x  <=>  y + (t+1-l)*x >= t+1
-        Expression lb = ctx.addExpression(name + "_lb");
+        LpExpression lb = ctx.addExpression(name + "_lb");
         lb.set(ctx.getLpVar(y), 1);
         lb.set(ctx.getLpVar(x), t + 1 - l);
         lb.lower(t + 1);
@@ -383,13 +382,13 @@ public class ReificationLinearizer implements ConstraintLinearizer {
         double u = y.dom.lastValue();
 
         // y >= t - (t-l)*(1-x)  <=>  y - (t-l)*x >= l
-        Expression lb = ctx.addExpression(name + "_lb");
+        LpExpression lb = ctx.addExpression(name + "_lb");
         lb.set(ctx.getLpVar(y), 1);
         lb.set(ctx.getLpVar(x), -(t - l));
         lb.lower(l);
 
         // y <= t-1 + (u-t+1)*x  <=>  y - (u-t+1)*x <= t-1
-        Expression ub = ctx.addExpression(name + "_ub");
+        LpExpression ub = ctx.addExpression(name + "_ub");
         ub.set(ctx.getLpVar(y), 1);
         ub.set(ctx.getLpVar(x), -(u - t + 1));
         ub.upper(t - 1);
@@ -405,14 +404,14 @@ public class ReificationLinearizer implements ConstraintLinearizer {
         double u = y.dom.lastValue() - z.dom.firstValue();
 
         // (y-z) <= t + (u-t)*(1-x)  <=>  (y-z) + (u-t)*x <= u
-        Expression ub = ctx.addExpression(name + "_ub");
+        LpExpression ub = ctx.addExpression(name + "_ub");
         ub.set(ctx.getLpVar(y), 1);
         ub.set(ctx.getLpVar(z), -1);
         ub.set(ctx.getLpVar(x), u - t);
         ub.upper(u);
 
         // (y-z) >= t+1 - (t+1-l)*x  <=>  (y-z) + (t+1-l)*x >= t+1
-        Expression lb = ctx.addExpression(name + "_lb");
+        LpExpression lb = ctx.addExpression(name + "_lb");
         lb.set(ctx.getLpVar(y), 1);
         lb.set(ctx.getLpVar(z), -1);
         lb.set(ctx.getLpVar(x), t + 1 - l);
@@ -429,14 +428,14 @@ public class ReificationLinearizer implements ConstraintLinearizer {
         double u = y.dom.lastValue() - z.dom.firstValue();
 
         // (y-z) >= t - (t-l)*(1-x)  <=>  (y-z) - (t-l)*x >= l
-        Expression lb = ctx.addExpression(name + "_lb");
+        LpExpression lb = ctx.addExpression(name + "_lb");
         lb.set(ctx.getLpVar(y), 1);
         lb.set(ctx.getLpVar(z), -1);
         lb.set(ctx.getLpVar(x), -(t - l));
         lb.lower(l);
 
         // (y-z) <= t-1 + (u-t+1)*x  <=>  (y-z) - (u-t+1)*x <= t-1
-        Expression ub = ctx.addExpression(name + "_ub");
+        LpExpression ub = ctx.addExpression(name + "_ub");
         ub.set(ctx.getLpVar(y), 1);
         ub.set(ctx.getLpVar(z), -1);
         ub.set(ctx.getLpVar(x), -(u - t + 1));

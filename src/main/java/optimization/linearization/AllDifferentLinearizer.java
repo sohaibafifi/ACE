@@ -17,10 +17,9 @@ import java.util.NavigableSet;
 import java.util.Set;
 import java.util.TreeSet;
 
-import org.ojalgo.optimisation.Expression;
-
 import constraints.Constraint;
 import constraints.global.AllDifferent;
+import optimization.lp.LpExpression;
 import variables.Domain;
 import variables.Variable;
 
@@ -100,7 +99,7 @@ public final class AllDifferentLinearizer implements ConstraintLinearizer {
                 if (!emittedCuts.add(signature))
                     continue;
 
-                Expression cut = ctx.addExpression("alldiff_" + constraintNum + "_" + ctx.nextGeneratedCutId());
+                LpExpression cut = ctx.addExpression("alldiff_" + constraintNum + "_" + ctx.nextGeneratedCutId());
                 for (Variable var : prefix)
                     cut.set(ctx.getLpVar(var), 1);
                 if (ascending)
@@ -193,7 +192,7 @@ public final class AllDifferentLinearizer implements ConstraintLinearizer {
         for (int value : unionValues)
             sum += value;
 
-        Expression expr = ctx.addExpression("alldiff_perm_" + ctr.num);
+        LpExpression expr = ctx.addExpression("alldiff_perm_" + ctr.num);
         for (Variable x : list)
             expr.set(ctx.getLpVar(x), 1);
         expr.level(sum);

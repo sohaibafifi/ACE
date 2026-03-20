@@ -10,14 +10,14 @@
 
 package optimization.linearization;
 
-import org.ojalgo.optimisation.Expression;
-
 import constraints.Constraint;
 import constraints.global.Lexicographic;
 import constraints.global.Lexicographic.LexicographicLE;
 import constraints.global.Lexicographic.LexicographicLT;
 import constraints.global.Lexicographic.LexicographicCstL;
 import constraints.global.Lexicographic.LexicographicCstG;
+import optimization.lp.LpExpression;
+import optimization.lp.LpVariable;
 import variables.Variable;
 
 /**
@@ -77,12 +77,11 @@ public class LexicographicLinearizer implements ConstraintLinearizer {
         // scp layout: [list1[0], list1[1], ..., list2[0], list2[1], ...]
         // Actually, looking at the code, scp is [list1..., list2...]
         // Let's extract the lists
-        org.ojalgo.optimisation.Variable[] delta = new org.ojalgo.optimisation.Variable[half];
+        LpVariable[] delta = new LpVariable[half];
 
         // Create δ variables
         for (int i = 0; i < half; i++) {
-            delta[i] = org.ojalgo.optimisation.Variable
-                .make("lex_" + ctr.num + "_d" + i).lower(0).upper(1);
+            delta[i] = ctx.newBinaryVariable("lex_" + ctr.num + "_d" + i);
             ctx.addVariable(delta[i]);
         }
 
@@ -96,7 +95,7 @@ public class LexicographicLinearizer implements ConstraintLinearizer {
             if (M < 0) M = 0; // Already x <= y guaranteed
 
             // x_i - y_i ≤ M · δ_i
-            Expression ub = ctx.addExpression("lex_ub_" + ctr.num + "_" + i);
+            LpExpression ub = ctx.addExpression("lex_ub_" + ctr.num + "_" + i);
             ub.set(ctx.getLpVar(xi), 1);
             ub.set(ctx.getLpVar(yi), -1);
             ub.set(delta[i], -M);
@@ -104,7 +103,7 @@ public class LexicographicLinearizer implements ConstraintLinearizer {
 
             // δ monotonicity: δ_{i+1} >= δ_i (for i < half-1)
             if (i < half - 1) {
-                Expression mono = ctx.addExpression("lex_mono_" + ctr.num + "_" + i);
+                LpExpression mono = ctx.addExpression("lex_mono_" + ctr.num + "_" + i);
                 mono.set(delta[i + 1], 1);
                 mono.set(delta[i], -1);
                 mono.lower(0);
@@ -145,12 +144,11 @@ public class LexicographicLinearizer implements ConstraintLinearizer {
             return false; // Can't access limit, skip linearization
         }
 
-        org.ojalgo.optimisation.Variable[] delta = new org.ojalgo.optimisation.Variable[n];
+        LpVariable[] delta = new LpVariable[n];
 
         // Create δ variables
         for (int i = 0; i < n; i++) {
-            delta[i] = org.ojalgo.optimisation.Variable
-                .make("lexL_" + ctr.num + "_d" + i).lower(0).upper(1);
+            delta[i] = ctx.newBinaryVariable("lexL_" + ctr.num + "_d" + i);
             ctx.addVariable(delta[i]);
         }
 
@@ -160,13 +158,13 @@ public class LexicographicLinearizer implements ConstraintLinearizer {
             double M = xi.dom.lastValue() - limit[i];
             if (M < 0) M = 0;
 
-            Expression ub = ctx.addExpression("lexL_ub_" + ctr.num + "_" + i);
+            LpExpression ub = ctx.addExpression("lexL_ub_" + ctr.num + "_" + i);
             ub.set(ctx.getLpVar(xi), 1);
             ub.set(delta[i], -M);
             ub.upper(limit[i]);
 
             if (i < n - 1) {
-                Expression mono = ctx.addExpression("lexL_mono_" + ctr.num + "_" + i);
+                LpExpression mono = ctx.addExpression("lexL_mono_" + ctr.num + "_" + i);
                 mono.set(delta[i + 1], 1);
                 mono.set(delta[i], -1);
                 mono.lower(0);
@@ -210,12 +208,11 @@ public class LexicographicLinearizer implements ConstraintLinearizer {
             return false;
         }
 
-        org.ojalgo.optimisation.Variable[] delta = new org.ojalgo.optimisation.Variable[n];
+        LpVariable[] delta = new LpVariable[n];
 
         // Create δ variables
         for (int i = 0; i < n; i++) {
-            delta[i] = org.ojalgo.optimisation.Variable
-                .make("lexG_" + ctr.num + "_d" + i).lower(0).upper(1);
+            delta[i] = ctx.newBinaryVariable("lexG_" + ctr.num + "_d" + i);
             ctx.addVariable(delta[i]);
         }
 
@@ -225,13 +222,13 @@ public class LexicographicLinearizer implements ConstraintLinearizer {
             double M = limit[i] - xi.dom.firstValue();
             if (M < 0) M = 0;
 
-            Expression lb = ctx.addExpression("lexG_lb_" + ctr.num + "_" + i);
+            LpExpression lb = ctx.addExpression("lexG_lb_" + ctr.num + "_" + i);
             lb.set(ctx.getLpVar(xi), -1);
             lb.set(delta[i], -M);
             lb.upper(-limit[i]);
 
             if (i < n - 1) {
-                Expression mono = ctx.addExpression("lexG_mono_" + ctr.num + "_" + i);
+                LpExpression mono = ctx.addExpression("lexG_mono_" + ctr.num + "_" + i);
                 mono.set(delta[i + 1], 1);
                 mono.set(delta[i], -1);
                 mono.lower(0);

@@ -16,10 +16,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
-import org.ojalgo.optimisation.ExpressionsBasedModel;
-import org.ojalgo.optimisation.Variable;
-import org.ojalgo.optimisation.Expression;
-
+import optimization.lp.LpExpression;
+import optimization.lp.LpModel;
+import optimization.lp.LpVariable;
 import problem.Problem;
 import variables.Domain;
 
@@ -32,11 +31,11 @@ import variables.Domain;
  */
 public class LinearizationContext {
 
-    private final ExpressionsBasedModel model;
-    private final Variable[] lpVars;
+    private final LpModel model;
+    private final LpVariable[] lpVars;
     private final Problem problem;
     private final List<LpCutGenerator> cutGenerators;
-    private final Map<Variable, Integer> variableIndexes;
+    private final Map<LpVariable, Integer> variableIndexes;
     private final Map<String, Object> metadata;
     private int generatedCutCount;
 
@@ -47,7 +46,7 @@ public class LinearizationContext {
      * @param lpVars LP variables corresponding to CP variables (indexed by var.num)
      * @param problem the CP problem being relaxed
      */
-    public LinearizationContext(ExpressionsBasedModel model, Variable[] lpVars, Problem problem) {
+    public LinearizationContext(LpModel model, LpVariable[] lpVars, Problem problem) {
         this.model = model;
         this.lpVars = lpVars;
         this.problem = problem;
@@ -66,7 +65,7 @@ public class LinearizationContext {
      * @param name the name for the expression
      * @return the created expression
      */
-    public Expression addExpression(String name) {
+    public LpExpression addExpression(String name) {
         return model.addExpression(name);
     }
 
@@ -75,9 +74,17 @@ public class LinearizationContext {
      *
      * @param var the variable to add
      */
-    public void addVariable(Variable var) {
+    public void addVariable(LpVariable var) {
         model.addVariable(var);
         variableIndexes.putIfAbsent(var, variableIndexes.size());
+    }
+
+    public LpVariable newVariable(String name, double lower, double upper) {
+        return model.newVariable(name, lower, upper);
+    }
+
+    public LpVariable newBinaryVariable(String name) {
+        return model.newVariable(name, 0d, 1d);
     }
 
     /**
@@ -86,7 +93,7 @@ public class LinearizationContext {
      * @param cpVar the CP variable
      * @return the corresponding LP variable
      */
-    public Variable getLpVar(variables.Variable cpVar) {
+    public LpVariable getLpVar(variables.Variable cpVar) {
         return lpVars[cpVar.num];
     }
 
@@ -96,11 +103,11 @@ public class LinearizationContext {
      * @param index the variable index
      * @return the LP variable at that index
      */
-    public Variable getLpVar(int index) {
+    public LpVariable getLpVar(int index) {
         return lpVars[index];
     }
 
-    public int getLpIndex(Variable lpVar) {
+    public int getLpIndex(LpVariable lpVar) {
         Integer index = variableIndexes.get(lpVar);
         return index == null ? -1 : index.intValue();
     }

@@ -19,8 +19,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-import org.ojalgo.optimisation.Expression;
-
 import constraints.Constraint;
 import constraints.intension.Primitive2;
 import constraints.intension.Primitive2.PrimitiveBinaryNoCst.*;
@@ -28,6 +26,8 @@ import constraints.intension.Primitive2.PrimitiveBinaryVariant1.Add2.*;
 import constraints.intension.Primitive2.PrimitiveBinaryVariant1.Sub2.*;
 import constraints.intension.Primitive2.PrimitiveBinaryVariant1.Dist2.*;
 import constraints.intension.Primitive2.PrimitiveBinaryVariant2.Dist2b.Dist2bEQ;
+import optimization.lp.LpExpression;
+import optimization.lp.LpVariable;
 import variables.Variable;
 
 /**
@@ -113,10 +113,10 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
     }
 
     private static final class PairPrecedence {
-        final org.ojalgo.optimisation.Variable selector;
+        final LpVariable selector;
         final boolean selectorMeansFirstBeforeSecond;
 
-        PairPrecedence(org.ojalgo.optimisation.Variable selector, boolean selectorMeansFirstBeforeSecond) {
+        PairPrecedence(LpVariable selector, boolean selectorMeansFirstBeforeSecond) {
             this.selector = selector;
             this.selectorMeansFirstBeforeSecond = selectorMeansFirstBeforeSecond;
         }
@@ -127,7 +127,7 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         final Map<PairKey, PairPrecedence> pairs = new HashMap<>();
         final List<TaskKey> tasks = new ArrayList<>();
 
-        void add(TaskKey left, Variable leftVar, TaskKey right, Variable rightVar, org.ojalgo.optimisation.Variable selector) {
+        void add(TaskKey left, Variable leftVar, TaskKey right, Variable rightVar, LpVariable selector) {
             startVars.putIfAbsent(left, leftVar);
             startVars.putIfAbsent(right, rightVar);
             if (!startVars.containsKey(left) || !startVars.containsKey(right))
@@ -159,7 +159,7 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
             return 1d - value;
         }
 
-        double addPrecedenceTerm(Expression cut, TaskKey from, TaskKey to, CutGenerationContext ctx) {
+        double addPrecedenceTerm(LpExpression cut, TaskKey from, TaskKey to, CutGenerationContext ctx) {
             PairPrecedence precedence = pairs.get(new PairKey(from, to));
             if (precedence == null)
                 return 0d;
@@ -226,7 +226,7 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
             if (!emittedCuts.add(signature))
                 return 0;
 
-            Expression cut = ctx.addExpression("noov_tri_" + ctx.nextGeneratedCutId());
+            LpExpression cut = ctx.addExpression("noov_tri_" + ctx.nextGeneratedCutId());
             double constant = 0d;
             constant += registry.addPrecedenceTerm(cut, first, second, ctx);
             constant += registry.addPrecedenceTerm(cut, second, third, ctx);
@@ -324,7 +324,7 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         Variable y = ctr.scp[1];
         int k = getK(ctr);
 
-        Expression expr = ctx.addExpression("add2LE_" + ctr.num);
+        LpExpression expr = ctx.addExpression("add2LE_" + ctr.num);
         expr.set(ctx.getLpVar(x), 1);
         expr.set(ctx.getLpVar(y), 1);
         expr.upper(k);
@@ -339,7 +339,7 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         Variable y = ctr.scp[1];
         int k = getK(ctr);
 
-        Expression expr = ctx.addExpression("add2GE_" + ctr.num);
+        LpExpression expr = ctx.addExpression("add2GE_" + ctr.num);
         expr.set(ctx.getLpVar(x), 1);
         expr.set(ctx.getLpVar(y), 1);
         expr.lower(k);
@@ -354,7 +354,7 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         Variable y = ctr.scp[1];
         int k = getK(ctr);
 
-        Expression expr = ctx.addExpression("add2EQ_" + ctr.num);
+        LpExpression expr = ctx.addExpression("add2EQ_" + ctr.num);
         expr.set(ctx.getLpVar(x), 1);
         expr.set(ctx.getLpVar(y), 1);
         expr.level(k);
@@ -369,7 +369,7 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         Variable y = ctr.scp[1];
         int k = getK(ctr);
 
-        Expression expr = ctx.addExpression("sub2LE_" + ctr.num);
+        LpExpression expr = ctx.addExpression("sub2LE_" + ctr.num);
         expr.set(ctx.getLpVar(x), 1);
         expr.set(ctx.getLpVar(y), -1);
         expr.upper(k);
@@ -384,7 +384,7 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         Variable y = ctr.scp[1];
         int k = getK(ctr);
 
-        Expression expr = ctx.addExpression("sub2GE_" + ctr.num);
+        LpExpression expr = ctx.addExpression("sub2GE_" + ctr.num);
         expr.set(ctx.getLpVar(x), 1);
         expr.set(ctx.getLpVar(y), -1);
         expr.lower(k);
@@ -399,7 +399,7 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         Variable y = ctr.scp[1];
         int k = getK(ctr);
 
-        Expression expr = ctx.addExpression("sub2EQ_" + ctr.num);
+        LpExpression expr = ctx.addExpression("sub2EQ_" + ctr.num);
         expr.set(ctx.getLpVar(x), 1);
         expr.set(ctx.getLpVar(y), -1);
         expr.level(k);
@@ -413,7 +413,7 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         Variable x = ctr.scp[0];
         Variable y = ctr.scp[1];
 
-        Expression expr = ctx.addExpression("neg2EQ_" + ctr.num);
+        LpExpression expr = ctx.addExpression("neg2EQ_" + ctr.num);
         expr.set(ctx.getLpVar(x), 1);
         expr.set(ctx.getLpVar(y), 1);
         expr.level(0);
@@ -427,7 +427,7 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         Variable x = ctr.scp[0];
         Variable y = ctr.scp[1];
 
-        Expression expr = ctx.addExpression("or2_" + ctr.num);
+        LpExpression expr = ctx.addExpression("or2_" + ctr.num);
         expr.set(ctx.getLpVar(x), 1);
         expr.set(ctx.getLpVar(y), 1);
         expr.lower(1);
@@ -444,13 +444,13 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         int k = getK(ctr);
 
         // x - y <= k
-        Expression expr1 = ctx.addExpression("dist2LE_pos_" + ctr.num);
+        LpExpression expr1 = ctx.addExpression("dist2LE_pos_" + ctr.num);
         expr1.set(ctx.getLpVar(x), 1);
         expr1.set(ctx.getLpVar(y), -1);
         expr1.upper(k);
 
         // y - x <= k  =>  x - y >= -k
-        Expression expr2 = ctx.addExpression("dist2LE_neg_" + ctr.num);
+        LpExpression expr2 = ctx.addExpression("dist2LE_neg_" + ctr.num);
         expr2.set(ctx.getLpVar(x), 1);
         expr2.set(ctx.getLpVar(y), -1);
         expr2.lower(-k);
@@ -478,14 +478,13 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         }
 
         // Create auxiliary binary b: b=1 means "x - y >= k" is the active branch
-        org.ojalgo.optimisation.Variable b = org.ojalgo.optimisation.Variable
-            .make("dist2GE_" + ctr.num + "_b").lower(0).upper(1);
+        LpVariable b = ctx.newBinaryVariable("dist2GE_" + ctr.num + "_b");
         ctx.addVariable(b);
 
         // x - y >= k - M*(1-b)  =>  x - y + M*b >= k - M + M = k
         // Actually: x - y >= k when b=1, relaxed when b=0
         // x - y - M*(1-b) >= k - M  =>  x - y + M*b >= k
-        Expression expr1 = ctx.addExpression("dist2GE_pos_" + ctr.num);
+        LpExpression expr1 = ctx.addExpression("dist2GE_pos_" + ctr.num);
         expr1.set(ctx.getLpVar(x), 1);
         expr1.set(ctx.getLpVar(y), -1);
         expr1.set(b, Mpos);
@@ -494,7 +493,7 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         // y - x >= k when b=0, i.e., y - x + M*b >= k
         // Actually we need: y - x >= k - M*b
         // y - x + M*b >= k
-        Expression expr2 = ctx.addExpression("dist2GE_neg_" + ctr.num);
+        LpExpression expr2 = ctx.addExpression("dist2GE_neg_" + ctr.num);
         expr2.set(ctx.getLpVar(y), 1);
         expr2.set(ctx.getLpVar(x), -1);
         expr2.set(b, -Mneg);
@@ -522,13 +521,13 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         int k = getK(ctr);
 
         // x >= y - k  =>  x - y >= -k
-        Expression expr1 = ctx.addExpression("dist2bEQ_pos_" + ctr.num);
+        LpExpression expr1 = ctx.addExpression("dist2bEQ_pos_" + ctr.num);
         expr1.set(ctx.getLpVar(x), 1);
         expr1.set(ctx.getLpVar(y), -1);
         expr1.lower(-k);
 
         // x >= k - y  =>  x + y >= k
-        Expression expr2 = ctx.addExpression("dist2bEQ_neg_" + ctr.num);
+        LpExpression expr2 = ctx.addExpression("dist2bEQ_neg_" + ctr.num);
         expr2.set(ctx.getLpVar(x), 1);
         expr2.set(ctx.getLpVar(y), 1);
         expr2.lower(k);
@@ -562,19 +561,18 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         double M2 = y.dom.lastValue() + wy - x.dom.firstValue();
 
         // Create auxiliary binary b: b=1 means x + wx <= y
-        org.ojalgo.optimisation.Variable b = org.ojalgo.optimisation.Variable
-            .make("disj_" + ctr.num + "_b").lower(0).upper(1);
+        LpVariable b = ctx.newBinaryVariable("disj_" + ctr.num + "_b");
         ctx.addVariable(b);
 
         // x + wx <= y + M*(1-b)  =>  x - y <= -wx + M - M*b  =>  x - y + M*b <= M - wx
-        Expression expr1 = ctx.addExpression("disj_xy_" + ctr.num);
+        LpExpression expr1 = ctx.addExpression("disj_xy_" + ctr.num);
         expr1.set(ctx.getLpVar(x), 1);
         expr1.set(ctx.getLpVar(y), -1);
         expr1.set(b, M1);
         expr1.upper(M1 - wx);
 
         // y + wy <= x + M*b  =>  y - x <= -wy + M*b  =>  y - x - M*b <= -wy
-        Expression expr2 = ctx.addExpression("disj_yx_" + ctr.num);
+        LpExpression expr2 = ctx.addExpression("disj_yx_" + ctr.num);
         expr2.set(ctx.getLpVar(y), 1);
         expr2.set(ctx.getLpVar(x), -1);
         expr2.set(b, -M2);
@@ -585,7 +583,7 @@ public class PrimitiveLinearizer implements ConstraintLinearizer {
         return true;
     }
 
-    private void registerDisjunctiveNoOverlapCut(Variable x, int wx, Variable y, int wy, org.ojalgo.optimisation.Variable selector,
+    private void registerDisjunctiveNoOverlapCut(Variable x, int wx, Variable y, int wy, LpVariable selector,
             LinearizationContext ctx) {
         DisjunctiveRegistry registry = ctx.getOrCreateMetadata(DISJUNCTIVE_REGISTRY_KEY, () -> {
             DisjunctiveRegistry created = new DisjunctiveRegistry();

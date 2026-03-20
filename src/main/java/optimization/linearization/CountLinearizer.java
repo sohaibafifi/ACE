@@ -10,11 +10,10 @@
 
 package optimization.linearization;
 
-import org.ojalgo.optimisation.Expression;
-import org.ojalgo.optimisation.Variable;
-
 import constraints.Constraint;
 import constraints.global.Count;
+import optimization.lp.LpExpression;
+import optimization.lp.LpVariable;
 import variables.Domain;
 
 /**
@@ -97,7 +96,7 @@ public class CountLinearizer implements ConstraintLinearizer {
     private boolean addBinaryCountConstraint(Count.CountCst countCtr, variables.Variable[] list,
             int value, int k, int n, String op, LinearizationContext ctx) {
 
-        Expression expr = ctx.addExpression("count_" + countCtr.num);
+        LpExpression expr = ctx.addExpression("count_" + countCtr.num);
         for (variables.Variable var : list) {
             expr.set(ctx.getLpVar(var), 1);
         }
@@ -141,7 +140,7 @@ public class CountLinearizer implements ConstraintLinearizer {
     private boolean addReifiedCountConstraint(Count.CountCst countCtr, variables.Variable[] list,
             int value, int k, String op, LinearizationContext ctx) {
 
-        Expression countExpr = ctx.addExpression("count_" + countCtr.num);
+        LpExpression countExpr = ctx.addExpression("count_" + countCtr.num);
 
         for (int i = 0; i < list.length; i++) {
             variables.Variable var = list[i];
@@ -150,15 +149,15 @@ public class CountLinearizer implements ConstraintLinearizer {
             double max = dom.lastValue();
 
             // Create auxiliary binary variables for reification
-            Variable bLt = Variable.make("count_" + countCtr.num + "_lt_" + i).lower(0).upper(1);
-            Variable bEq = Variable.make("count_" + countCtr.num + "_eq_" + i).lower(0).upper(1);
-            Variable bGt = Variable.make("count_" + countCtr.num + "_gt_" + i).lower(0).upper(1);
+            LpVariable bLt = ctx.newBinaryVariable("count_" + countCtr.num + "_lt_" + i);
+            LpVariable bEq = ctx.newBinaryVariable("count_" + countCtr.num + "_eq_" + i);
+            LpVariable bGt = ctx.newBinaryVariable("count_" + countCtr.num + "_gt_" + i);
             ctx.addVariable(bLt);
             ctx.addVariable(bEq);
             ctx.addVariable(bGt);
 
             // Exactly one of {lt, eq, gt} must hold: b_lt + b_eq + b_gt = 1
-            Expression splitExpr = ctx.addExpression("count_split_" + countCtr.num + "_" + i);
+            LpExpression splitExpr = ctx.addExpression("count_split_" + countCtr.num + "_" + i);
             splitExpr.set(bLt, 1);
             splitExpr.set(bEq, 1);
             splitExpr.set(bGt, 1);
@@ -171,25 +170,25 @@ public class CountLinearizer implements ConstraintLinearizer {
             double mEqLo = value - min;
 
             // b_lt=1 => x_i <= value-1: x_i + mLt*b_lt <= value-1 + mLt
-            Expression ltExpr = ctx.addExpression("count_lt_" + countCtr.num + "_" + i);
+            LpExpression ltExpr = ctx.addExpression("count_lt_" + countCtr.num + "_" + i);
             ltExpr.set(ctx.getLpVar(var), 1);
             ltExpr.set(bLt, mLt);
             ltExpr.upper(value - 1 + mLt);
 
             // b_gt=1 => x_i >= value+1: x_i - mGt*b_gt >= value+1 - mGt
-            Expression gtExpr = ctx.addExpression("count_gt_" + countCtr.num + "_" + i);
+            LpExpression gtExpr = ctx.addExpression("count_gt_" + countCtr.num + "_" + i);
             gtExpr.set(ctx.getLpVar(var), 1);
             gtExpr.set(bGt, -mGt);
             gtExpr.lower(value + 1 - mGt);
 
             // b_eq=1 => x_i <= value: x_i + mEqUp*b_eq <= value + mEqUp
-            Expression eqUpperExpr = ctx.addExpression("count_eq_up_" + countCtr.num + "_" + i);
+            LpExpression eqUpperExpr = ctx.addExpression("count_eq_up_" + countCtr.num + "_" + i);
             eqUpperExpr.set(ctx.getLpVar(var), 1);
             eqUpperExpr.set(bEq, mEqUp);
             eqUpperExpr.upper(value + mEqUp);
 
             // b_eq=1 => x_i >= value: x_i - mEqLo*b_eq >= value - mEqLo
-            Expression eqLowerExpr = ctx.addExpression("count_eq_lo_" + countCtr.num + "_" + i);
+            LpExpression eqLowerExpr = ctx.addExpression("count_eq_lo_" + countCtr.num + "_" + i);
             eqLowerExpr.set(ctx.getLpVar(var), 1);
             eqLowerExpr.set(bEq, -mEqLo);
             eqLowerExpr.lower(value - mEqLo);

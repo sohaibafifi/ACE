@@ -13,6 +13,7 @@ package optimization;
 import java.util.ArrayList;
 import java.util.List;
 
+import optimization.lp.LpSolveResult;
 import solver.Solver;
 import solver.Solver.Stopping;
 import variables.Variable;
@@ -649,9 +650,9 @@ final class LbTreeSearch {
 
 		if (hasLp) {
 			relaxation.updateDomains();
-			LPRelaxation.SolveResult lpResult = relaxation.solveWithReducedCostFixing(false, incumbentCutoff, minimization);
+			LpSolveResult lpResult = relaxation.solveWithReducedCostFixing(false, incumbentCutoff, minimization);
 			if (lpResult.hasObjectiveBound()) {
-				long lpBound = relaxation.roundObjectiveBound(lpResult.objectiveValue, minimization);
+				long lpBound = relaxation.roundObjectiveBound(lpResult.objectiveBound, minimization);
 				cpBound = minimization ? Math.max(cpBound, lpBound) : Math.min(cpBound, lpBound);
 				lpValues = lpResult.variableValues;
 			} else if (lpResult.isInfeasible() && exactLpModel) {

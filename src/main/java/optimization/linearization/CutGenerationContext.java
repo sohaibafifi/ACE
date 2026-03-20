@@ -10,9 +10,8 @@
 
 package optimization.linearization;
 
-import org.ojalgo.optimisation.Expression;
-import org.ojalgo.optimisation.Variable;
-
+import optimization.lp.LpExpression;
+import optimization.lp.LpVariable;
 import problem.Problem;
 import variables.Domain;
 
@@ -29,15 +28,15 @@ public final class CutGenerationContext {
 		this.lpValues = lpValues;
 	}
 
-	public Expression addExpression(String name) {
+	public LpExpression addExpression(String name) {
 		return linearizationContext.addExpression(name);
 	}
 
-	public Variable getLpVar(variables.Variable cpVar) {
+	public LpVariable getLpVar(variables.Variable cpVar) {
 		return linearizationContext.getLpVar(cpVar);
 	}
 
-	public Variable getLpVar(int index) {
+	public LpVariable getLpVar(int index) {
 		return linearizationContext.getLpVar(index);
 	}
 
@@ -49,7 +48,7 @@ public final class CutGenerationContext {
 		return lpValues[index];
 	}
 
-	public double getLpValue(Variable lpVar) {
+	public double getLpValue(LpVariable lpVar) {
 		int index = linearizationContext.getLpIndex(lpVar);
 		return index >= 0 && index < lpValues.length ? lpValues[index] : Double.NaN;
 	}

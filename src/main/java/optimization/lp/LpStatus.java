@@ -1,0 +1,28 @@
+/*
+ * This file is part of the constraint solver ACE (AbsCon Essence).
+ *
+ * Copyright (c) 2021. All rights reserved.
+ * Christophe Lecoutre, CRIL, Univ. Artois and CNRS.
+ *
+ * Licensed under the MIT License.
+ * See LICENSE file in the project root for full license information.
+ */
+
+package optimization.lp;
+
+public enum LpStatus {
+	OPTIMAL,
+	INFEASIBLE,
+	INVALID,
+	FAILED,
+	UNBOUNDED,
+	UNKNOWN;
+
+	public boolean isOptimal() {
+		return this == OPTIMAL;
+	}
+
+	public boolean isInfeasible() {
+		return this == INFEASIBLE;
+	}
+}

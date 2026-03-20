@@ -9,8 +9,6 @@
  */
 
 package optimization.linearization;
-
-import org.ojalgo.optimisation.Expression;
 import org.xcsp.common.IVar;
 import org.xcsp.common.Types.TypeExpr;
 import org.xcsp.common.predicates.XNode;
@@ -19,6 +17,8 @@ import org.xcsp.common.predicates.XNodeParent;
 
 import constraints.Constraint;
 import constraints.ConstraintIntension;
+import optimization.lp.LpExpression;
+import optimization.lp.LpVariable;
 import variables.Variable;
 
 import java.util.HashMap;
@@ -239,7 +239,7 @@ public class IntensionLinearizer implements ConstraintLinearizer {
         // Now we have: sum(coeff[i] * x[i]) + constant OP 0
         // Rearrange to: sum(coeff[i] * x[i]) OP -constant
 
-        Expression expr = ctx.addExpression("intension_" + ic.num);
+        LpExpression expr = ctx.addExpression("intension_" + ic.num);
         for (Map.Entry<Variable, Double> e : coeffs.entrySet()) {
             expr.set(ctx.getLpVar(e.getKey()), e.getValue());
         }
@@ -411,7 +411,7 @@ public class IntensionLinearizer implements ConstraintLinearizer {
         // When b=1: sum ≤ -constant (constraint holds)
         // When b=0: sum ≤ -constant + M (relaxed)
 
-        Expression expr = ctx.addExpression("intension_imp_" + ic.num);
+        LpExpression expr = ctx.addExpression("intension_imp_" + ic.num);
         for (Map.Entry<Variable, Double> e : coeffs.entrySet()) {
             expr.set(ctx.getLpVar(e.getKey()), e.getValue());
         }
@@ -481,13 +481,12 @@ public class IntensionLinearizer implements ConstraintLinearizer {
         if (M2 <= 0) M2 = 10000;
 
         // Create auxiliary binary b
-        org.ojalgo.optimisation.Variable b = org.ojalgo.optimisation.Variable
-            .make("intension_or_" + ic.num + "_b").lower(0).upper(1);
+        LpVariable b = ctx.newBinaryVariable("intension_or_" + ic.num + "_b");
         ctx.addVariable(b);
 
         // c1: sum1 ≤ -const1 when b=1 => sum1 + M1*(1-b) ≤ -const1 + M1
         // => sum1 - M1*b ≤ -const1
-        Expression expr1 = ctx.addExpression("intension_or1_" + ic.num);
+        LpExpression expr1 = ctx.addExpression("intension_or1_" + ic.num);
         for (Map.Entry<Variable, Double> e : coeffs1.entrySet()) {
             expr1.set(ctx.getLpVar(e.getKey()), e.getValue());
         }
@@ -495,7 +494,7 @@ public class IntensionLinearizer implements ConstraintLinearizer {
         expr1.upper(-constant1[0] + M1);
 
         // c2: sum2 ≤ -const2 when b=0 => sum2 + M2*b ≤ -const2 + M2
-        Expression expr2 = ctx.addExpression("intension_or2_" + ic.num);
+        LpExpression expr2 = ctx.addExpression("intension_or2_" + ic.num);
         for (Map.Entry<Variable, Double> e : coeffs2.entrySet()) {
             expr2.set(ctx.getLpVar(e.getKey()), e.getValue());
         }

@@ -23,6 +23,7 @@ import org.xcsp.common.Types.TypeOptimization;
 import dashboard.Input;
 import dashboard.Output;
 import interfaces.Observers.ObserverOnRuns;
+import optimization.lp.LpSolveResult;
 import problem.Problem;
 import solver.Solver;
 import utility.Kit;
@@ -246,7 +247,7 @@ public abstract class Optimizer implements ObserverOnRuns {
 		}
 		
 		long cutoff = minimization ? maxBound : minBound;
-		LPRelaxation.SolveResult lpResult = lpRelaxation.solveWithReducedCostFixing(atRootNode, cutoff, minimization);
+		LpSolveResult lpResult = lpRelaxation.solveWithReducedCostFixing(atRootNode, cutoff, minimization);
 		boolean consistent = true;
 		if (lpResult.isInfeasible()) {
 			atRootNode = false;
@@ -258,7 +259,7 @@ public abstract class Optimizer implements ObserverOnRuns {
 			nodesSinceLastLP = 0;
 			return true;
 		}
-		double lpBound = lpResult.objectiveValue;
+		double lpBound = lpResult.objectiveBound;
 
 		if (atRootNode) {
 			// ONLY update global bounds if we're at the root node!

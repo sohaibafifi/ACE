@@ -13,10 +13,10 @@ package optimization.linearization;
 import java.util.HashSet;
 import java.util.Set;
 
-import org.ojalgo.optimisation.Expression;
-
 import constraints.Constraint;
 import constraints.global.Cumulative;
+import optimization.lp.LpExpression;
+import optimization.lp.LpVariable;
 import variables.Variable;
 
 /**
@@ -127,7 +127,7 @@ public class CumulativeLinearizer implements ConstraintLinearizer {
                 if (!emittedCuts.add(key))
                     continue;
 
-                Expression cut = ctx.addExpression("cumul_tt_" + constraintNum + "_" + ctx.nextGeneratedCutId());
+                LpExpression cut = ctx.addExpression("cumul_tt_" + constraintNum + "_" + ctx.nextGeneratedCutId());
                 if (data.heightVars == null) {
                     if (data.limitVar == null) {
                         cut.upper(data.limit - constantDemand);
@@ -245,7 +245,7 @@ public class CumulativeLinearizer implements ConstraintLinearizer {
 
     private void addEndBounds(Cumulative ctr, CumulativeData data, int maxEnd, LinearizationContext ctx) {
         for (int i = 0; i < data.nTasks; i++) {
-            Expression endExpr = ctx.addExpression("cumul_end_" + ctr.num + "_" + i);
+            LpExpression endExpr = ctx.addExpression("cumul_end_" + ctr.num + "_" + i);
             endExpr.set(ctx.getLpVar(data.starts[i]), 1);
             if (data.widthVars == null) {
                 endExpr.upper(maxEnd - data.widths[i]);
@@ -281,13 +281,13 @@ public class CumulativeLinearizer implements ConstraintLinearizer {
         for (int i = 0; i < data.nTasks; i++)
             totalEnergy += (long) data.widths[i] * data.heights[i];
 
-        Expression expr = ctx.addExpression("cumul_energy_" + ctr.num);
+        LpExpression expr = ctx.addExpression("cumul_energy_" + ctr.num);
         expr.set(ctx.getLpVar(data.limitVar), -horizon);
         expr.upper(-totalEnergy);
     }
 
     private void addLowerBoundEnergyFromWidths(Cumulative ctr, CumulativeData data, int horizon, LinearizationContext ctx) {
-        Expression expr = ctx.addExpression("cumul_energy_w_" + ctr.num);
+        LpExpression expr = ctx.addExpression("cumul_energy_w_" + ctr.num);
         for (int i = 0; i < data.nTasks; i++) {
             int demandLb = data.minHeight(i);
             if (demandLb == 0)
@@ -303,7 +303,7 @@ public class CumulativeLinearizer implements ConstraintLinearizer {
     }
 
     private void addLowerBoundEnergyFromHeights(Cumulative ctr, CumulativeData data, int horizon, LinearizationContext ctx) {
-        Expression expr = ctx.addExpression("cumul_energy_h_" + ctr.num);
+        LpExpression expr = ctx.addExpression("cumul_energy_h_" + ctr.num);
         for (int i = 0; i < data.nTasks; i++) {
             int widthLb = data.minWidth(i);
             if (widthLb == 0)
@@ -330,18 +330,18 @@ public class CumulativeLinearizer implements ConstraintLinearizer {
                     long pairDemand = (long) data.heights[i] + data.heights[j];
                     if (data.limitVar == null) {
                         if (pairDemand > data.limit) {
-                            Expression expr = ctx.addExpression("cumul_overlap_" + ctr.num + "_" + i + "_" + j);
+                            LpExpression expr = ctx.addExpression("cumul_overlap_" + ctr.num + "_" + i + "_" + j);
                             expr.lower(1);
                             added++;
                         }
                     } else {
-                        Expression expr = ctx.addExpression("cumul_overlap_" + ctr.num + "_" + i + "_" + j);
+                        LpExpression expr = ctx.addExpression("cumul_overlap_" + ctr.num + "_" + i + "_" + j);
                         expr.set(ctx.getLpVar(data.limitVar), -1);
                         expr.upper(-pairDemand);
                         added++;
                     }
                 } else {
-                    Expression expr = ctx.addExpression("cumul_overlap_" + ctr.num + "_" + i + "_" + j);
+                    LpExpression expr = ctx.addExpression("cumul_overlap_" + ctr.num + "_" + i + "_" + j);
                     expr.set(ctx.getLpVar(data.heightVars[i]), 1);
                     expr.set(ctx.getLpVar(data.heightVars[j]), 1);
                     if (data.limitVar == null)
@@ -400,11 +400,10 @@ public class CumulativeLinearizer implements ConstraintLinearizer {
         if (M1 <= 0 || M2 <= 0)
             return;
 
-        org.ojalgo.optimisation.Variable b = org.ojalgo.optimisation.Variable
-            .make("cumul_disj_" + ctr.num + "_" + i + "_" + j).lower(0).upper(1);
+        LpVariable b = ctx.newBinaryVariable("cumul_disj_" + ctr.num + "_" + i + "_" + j);
         ctx.addVariable(b);
 
-        Expression expr1 = ctx.addExpression("cumul_disj_ij_" + ctr.num + "_" + i + "_" + j);
+        LpExpression expr1 = ctx.addExpression("cumul_disj_ij_" + ctr.num + "_" + i + "_" + j);
         expr1.set(ctx.getLpVar(si), 1);
         expr1.set(ctx.getLpVar(sj), -1);
         if (data.widthVars == null)
@@ -415,7 +414,7 @@ public class CumulativeLinearizer implements ConstraintLinearizer {
         }
         expr1.set(b, M1);
 
-        Expression expr2 = ctx.addExpression("cumul_disj_ji_" + ctr.num + "_" + i + "_" + j);
+        LpExpression expr2 = ctx.addExpression("cumul_disj_ji_" + ctr.num + "_" + i + "_" + j);
         expr2.set(ctx.getLpVar(sj), 1);
         expr2.set(ctx.getLpVar(si), -1);
         if (data.widthVars == null)

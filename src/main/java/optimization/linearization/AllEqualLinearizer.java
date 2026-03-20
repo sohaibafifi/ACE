@@ -10,10 +10,9 @@
 
 package optimization.linearization;
 
-import org.ojalgo.optimisation.Expression;
-
 import constraints.Constraint;
 import constraints.global.AllEqual;
+import optimization.lp.LpExpression;
 import variables.Variable;
 
 /**
@@ -44,7 +43,7 @@ public class AllEqualLinearizer implements ConstraintLinearizer {
         Variable x0 = scp[0];
         for (int i = 1; i < scp.length; i++) {
             Variable xi = scp[i];
-            Expression expr = ctx.addExpression("allEq_" + ctr.num + "_" + i);
+            LpExpression expr = ctx.addExpression("allEq_" + ctr.num + "_" + i);
             expr.set(ctx.getLpVar(xi), 1);
             expr.set(ctx.getLpVar(x0), -1);
             expr.level(0); // xi - x0 = 0

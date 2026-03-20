@@ -16,10 +16,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.ojalgo.optimisation.Expression;
-
 import constraints.Constraint;
 import constraints.global.Sum;
+import optimization.lp.LpExpression;
 import variables.Variable;
 
 /**
@@ -112,7 +111,7 @@ public class SumLinearizer implements ConstraintLinearizer {
             if (!emittedCuts.add(signature))
                 return 0;
 
-            Expression cut = ctx.addExpression("cover_" + constraintNum + "_" + ctx.nextGeneratedCutId());
+            LpExpression cut = ctx.addExpression("cover_" + constraintNum + "_" + ctx.nextGeneratedCutId());
             for (int i : cover)
                 cut.set(ctx.getLpVar(scp[i]), 1);
             cut.upper(cover.size() - 1);
@@ -165,7 +164,7 @@ public class SumLinearizer implements ConstraintLinearizer {
         Variable[] scp = sumCtr.scp;
         long limit = sumCtr.limit();
 
-        Expression expr = ctx.addExpression("sum_" + sumCtr.num);
+        LpExpression expr = ctx.addExpression("sum_" + sumCtr.num);
         for (Variable var : scp) {
             expr.set(ctx.getLpVar(var), 1);
         }
@@ -191,7 +190,7 @@ public class SumLinearizer implements ConstraintLinearizer {
         int[] coeffs = sumCtr.icoeffs;
         long limit = sumCtr.limit();
 
-        Expression expr = ctx.addExpression("wsum_" + sumCtr.num);
+        LpExpression expr = ctx.addExpression("wsum_" + sumCtr.num);
         for (int i = 0; i < scp.length; i++) {
             expr.set(ctx.getLpVar(scp[i]), coeffs[i]);
         }
