@@ -11,12 +11,18 @@
 package optimization.lp;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.invoke.MethodHandle;
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Locale;
 import java.util.Optional;
 
 import org.scijava.nativelib.NativeLoader;
@@ -78,7 +84,7 @@ final class HighsCApi {
 
 	static {
 		try {
-			NativeLoader.loadLibrary("highs");
+			loadHighsLibrary();
 
 			Class<?> memoryLayoutClass = Class.forName("java.lang.foreign.MemoryLayout");
 			Class<?> valueLayoutClass = Class.forName("java.lang.foreign.ValueLayout");
@@ -128,6 +134,60 @@ final class HighsCApi {
 	}
 
 	private HighsCApi() {
+	}
+
+	private static void loadHighsLibrary() throws IOException {
+		IOException bundledFailure = null;
+		try {
+			loadBundledLibrary();
+			return;
+		} catch (IOException e) {
+			bundledFailure = e;
+		} catch (UnsatisfiedLinkError e) {
+			bundledFailure = new IOException("Unable to load bundled HiGHS library", e);
+		}
+		try {
+			NativeLoader.loadLibrary("highs");
+		} catch (IOException e) {
+			if (bundledFailure != null)
+				e.addSuppressed(bundledFailure);
+			throw e;
+		}
+	}
+
+	private static void loadBundledLibrary() throws IOException {
+		String resource = bundledLibraryResourcePath();
+		if (resource == null)
+			throw new IOException("Unsupported platform for bundled HiGHS library: " + System.getProperty("os.name") + " / " + System.getProperty("os.arch"));
+		ClassLoader classLoader = HighsCApi.class.getClassLoader();
+		URL url = classLoader.getResource(resource);
+		if (url == null)
+			throw new IOException("Bundled HiGHS library not found in classpath: " + resource);
+		String fileName = resource.substring(resource.lastIndexOf('/') + 1);
+		String prefix = fileName.contains(".") ? fileName.substring(0, fileName.indexOf('.')) : fileName;
+		if (prefix.length() < 3)
+			prefix = "ace" + prefix;
+		String suffix = fileName.contains(".") ? fileName.substring(fileName.indexOf('.')) : ".tmp";
+		Path extracted = Files.createTempFile("ace-highs-" + prefix + "-", suffix);
+		extracted.toFile().deleteOnExit();
+		try (InputStream in = url.openStream()) {
+			Files.copy(in, extracted, StandardCopyOption.REPLACE_EXISTING);
+		}
+		System.load(extracted.toAbsolutePath().toString());
+	}
+
+	private static String bundledLibraryResourcePath() {
+		String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+		String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+		boolean x86_64 = arch.equals("amd64") || arch.equals("x86_64");
+		boolean arm64 = arch.equals("aarch64") || arch.equals("arm64");
+		if (os.contains("linux") && x86_64)
+			return "natives/linux_64/libhighs.so";
+		if ((os.contains("mac") || os.contains("darwin")) && arm64)
+			return "natives/osx_arm64/libhighs.dylib";
+		if (os.contains("win") && x86_64)
+			return "natives/windows_64/highs.dll";
+		return null;
 	}
 
 	static final class NativeArena implements AutoCloseable {
