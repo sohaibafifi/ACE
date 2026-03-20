@@ -906,6 +906,10 @@ public final class BenchmarkLpVsNoLp {
 			List<String> command = new ArrayList<>();
 			command.add(javaExecutable());
 			command.addAll(forwardedJvmArgs());
+			if (requiresPreviewFfmRuntime() && command.stream().noneMatch(arg -> arg.equals("--enable-preview")))
+				command.add("--enable-preview");
+			if (command.stream().noneMatch(arg -> arg.startsWith("--enable-native-access=")))
+				command.add("--enable-native-access=ALL-UNNAMED");
 			command.add("-cp");
 			command.add(System.getProperty("java.class.path"));
 			command.add("problems.BenchmarkLpVsNoLpWorker");
@@ -971,6 +975,11 @@ public final class BenchmarkLpVsNoLp {
 				.filter(arg -> arg.startsWith("-Xms") || arg.startsWith("-Xmx") || arg.equals("-ea") || arg.equals("-da")
 						|| arg.startsWith("--enable-native-access="))
 				.collect(Collectors.toList());
+	}
+
+	private static boolean requiresPreviewFfmRuntime() {
+		int feature = Runtime.version().feature();
+		return feature == 20 || feature == 21;
 	}
 
 	private static boolean parseBoolean(Map<String, String> values, String key, boolean defaultValue) {
