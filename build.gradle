@@ -1,16 +1,13 @@
 apply plugin: 'java'
 
+java {
+    sourceCompatibility = JavaVersion.VERSION_24
+    targetCompatibility = JavaVersion.VERSION_24
+}
 
-//java {
-//    toolchain {
-//        languageVersion = JavaLanguageVersion.of(11)
-//    }
-//}
-
-sourceCompatibility = 1.11
-targetCompatibility = 1.11 
-
-archivesBaseName = "ACE"
+base {
+    archivesName = "ACE"
+}
 version = '2.6'
  
 repositories {
@@ -19,7 +16,8 @@ repositories {
 
 dependencies {
     implementation fileTree(dir: 'lib', include: ['*.jar'])
-    implementation 'org.ojalgo:ojalgo:49.2.1'
+    implementation 'org.scijava:native-lib-loader:2.5.0'
+    runtimeOnly 'com.ustermetrics:highs4j-native:3.0.0-1.13.1'
     //testImplementation 'junit:junit:4.12'
 }
 
@@ -52,16 +50,18 @@ test {
   // set JVM arguments for the test JVM(s)
   jvmArgs "-da" 
   jvmArgs "-Xmx12G"  // -d64 
+  jvmArgs "--enable-native-access=ALL-UNNAMED"
 }
 
 task benchmarkLpVsNoLp(type: JavaExec) {
 	group = "verification"
-	description = "Benchmark ACE with LP enabled and disabled on the same optimization instances, focusing on proof, gap and nodes."
+	description = "Benchmark ACE in CP, CP+ROOTLP and CP+LP modes on the same optimization instances, focusing on proof, root bound, gap and nodes."
 	dependsOn testClasses
 	classpath = sourceSets.test.runtimeClasspath
 	mainClass = "problems.BenchmarkLpVsNoLp"
 	jvmArgs "-da"
 	jvmArgs "-Xmx12G"
+	jvmArgs "--enable-native-access=ALL-UNNAMED"
 	if (project.hasProperty("benchmarkArgs")) {
 		args project.property("benchmarkArgs").toString().trim().split("\\s+").findAll { !it.isEmpty() }
 	}
