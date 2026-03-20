@@ -189,15 +189,19 @@ public class Head extends Thread {
 					|| dealWith(clazz, ConstraintExtension.class) || dealWith(clazz, Propagation.class);
 		}
 
-		private void loadRecursively(File directory, String packageName) throws ClassNotFoundException {
+		private Class<?> loadClass(String name, ClassLoader classLoader) throws ClassNotFoundException {
+			return Class.forName(name, false, classLoader);
+		}
+
+		private void loadRecursively(File directory, String packageName, ClassLoader classLoader) throws ClassNotFoundException {
 			packageName = packageName.startsWith(".") ? packageName.substring(1) : packageName;
 			for (File file : directory.listFiles())
 				if (file.isDirectory()) {
 					control(!file.getName().contains("."));
-					loadRecursively(file, packageName + "." + file.getName());
+					loadRecursively(file, packageName + "." + file.getName(), classLoader);
 				} else if (file.getName().endsWith(DOT_CLASS) && file.getName().charAt(0) != '/')
 					// above, second part of the condition for a class in the default package
-					dealWith(Class.forName(packageName + '.' + file.getName().substring(0, file.getName().length() - DOT_CLASS.length())));
+					dealWith(loadClass(packageName + '.' + file.getName().substring(0, file.getName().length() - DOT_CLASS.length()), classLoader));
 		}
 
 		private AvailableClasses() {
@@ -214,7 +218,7 @@ public class Head extends Thread {
 								if (jarEntry.getName().endsWith(DOT_CLASS))
 									try {
 										String s = jarEntry.getName().replaceAll("/", "\\.");
-										dealWith(Class.forName(s.substring(0, s.lastIndexOf("."))));
+										dealWith(loadClass(s.substring(0, s.lastIndexOf(".")), Thread.currentThread().getContextClassLoader()));
 									} catch (Throwable e) {
 										Kit.log.fine("Impossible to load" + jarEntry.getName());
 									}
@@ -228,14 +232,14 @@ public class Head extends Thread {
 				// however, if we need to look at unloaded classes, as for example some in a subclass of Propagation, we
 				// need to put lines as this one:
 				Class<?> _1 = Constraint.class, _2 = Propagation.class, _3 = Heuristic.class;
-				for (Package p : Package.getPackages()) {
-					String name = p.getName();
-					if (!name.startsWith("constraints") && !name.startsWith("heuristics") && !name.startsWith("propagation"))
-						continue;
-					for (URL url : Collections.list(classLoader.getResources(p.getName().replace('.', '/'))))
-						if (url.getProtocol().equals("file") && new File(url.getFile()).exists())
-							loadRecursively(new File(url.getFile()), p.getName());
-				}
+					for (Package p : Package.getPackages()) {
+						String name = p.getName();
+						if (!name.startsWith("constraints") && !name.startsWith("heuristics") && !name.startsWith("propagation"))
+							continue;
+						for (URL url : Collections.list(classLoader.getResources(p.getName().replace('.', '/'))))
+							if (url.getProtocol().equals("file") && new File(url.getFile()).exists())
+								loadRecursively(new File(url.getFile()), p.getName(), classLoader);
+					}
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
