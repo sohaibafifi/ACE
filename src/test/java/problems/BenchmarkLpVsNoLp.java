@@ -906,6 +906,10 @@ public final class BenchmarkLpVsNoLp {
 			List<String> command = new ArrayList<>();
 			command.add(javaExecutable());
 			command.addAll(forwardedJvmArgs());
+			String javaLibraryPath = System.getProperty("java.library.path");
+			if (javaLibraryPath != null && !javaLibraryPath.isEmpty()
+					&& command.stream().noneMatch(arg -> arg.startsWith("-Djava.library.path=")))
+				command.add("-Djava.library.path=" + javaLibraryPath);
 			if (requiresPreviewFfmRuntime() && command.stream().noneMatch(arg -> arg.equals("--enable-preview")))
 				command.add("--enable-preview");
 			if (command.stream().noneMatch(arg -> arg.startsWith("--enable-native-access=")))
@@ -973,7 +977,7 @@ public final class BenchmarkLpVsNoLp {
 	private static List<String> forwardedJvmArgs() {
 		return ManagementFactory.getRuntimeMXBean().getInputArguments().stream()
 				.filter(arg -> arg.startsWith("-Xms") || arg.startsWith("-Xmx") || arg.equals("-ea") || arg.equals("-da")
-						|| arg.startsWith("--enable-native-access="))
+						|| arg.startsWith("--enable-native-access=") || arg.startsWith("-Djava.library.path="))
 				.collect(Collectors.toList());
 	}
 
