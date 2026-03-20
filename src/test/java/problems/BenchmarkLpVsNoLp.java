@@ -968,7 +968,8 @@ public final class BenchmarkLpVsNoLp {
 
 	private static List<String> forwardedJvmArgs() {
 		return ManagementFactory.getRuntimeMXBean().getInputArguments().stream()
-				.filter(arg -> arg.startsWith("-Xms") || arg.startsWith("-Xmx") || arg.equals("-ea") || arg.equals("-da"))
+				.filter(arg -> arg.startsWith("-Xms") || arg.startsWith("-Xmx") || arg.equals("-ea") || arg.equals("-da")
+						|| arg.startsWith("--enable-native-access="))
 				.collect(Collectors.toList());
 	}
 
