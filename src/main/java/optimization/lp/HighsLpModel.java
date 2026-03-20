@@ -10,8 +10,6 @@
 
 package optimization.lp;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
 import java.lang.ref.Cleaner;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -25,7 +23,7 @@ public final class HighsLpModel implements LpModel {
 	private static final Cleaner CLEANER = Cleaner.create();
 	private static final double HIGHS_INF = 1e30;
 
-	private final MemorySegment highs;
+	private final Object highs;
 	private final Cleaner.Cleanable cleanable;
 	private final List<HighsLpVariable> variables;
 	private final List<HighsLpExpression> expressions;
@@ -119,7 +117,7 @@ public final class HighsLpModel implements LpModel {
 		long modelStatus = HighsCApi.getModelStatus(highs);
 		LpStatus status = mapStatus(runStatus, modelStatus);
 
-		try (Arena arena = Arena.ofConfined()) {
+		try (HighsCApi.NativeArena arena = HighsCApi.openArena()) {
 			double objectiveValue = HighsCApi.getDoubleInfoValue(highs, arena, "objective_function_value", Double.NaN);
 			int numCol = variables.size();
 			int numRow = constraintExpressions().size();
@@ -132,10 +130,10 @@ public final class HighsLpModel implements LpModel {
 			double[] rowValues = null;
 			double[] rowDuals = null;
 			if (primalSolutionStatus != HighsCApi.SOLUTION_STATUS_NONE || dualSolutionStatus != HighsCApi.SOLUTION_STATUS_NONE) {
-				MemorySegment colValueSeg = allocateDoubles(arena, numCol);
-				MemorySegment colDualSeg = allocateDoubles(arena, numCol);
-				MemorySegment rowValueSeg = allocateDoubles(arena, numRow);
-				MemorySegment rowDualSeg = allocateDoubles(arena, numRow);
+				Object colValueSeg = allocateDoubles(arena, numCol);
+				Object colDualSeg = allocateDoubles(arena, numCol);
+				Object rowValueSeg = allocateDoubles(arena, numRow);
+				Object rowDualSeg = allocateDoubles(arena, numRow);
 				long solutionStatus = HighsCApi.getSolution(highs, colValueSeg, colDualSeg, rowValueSeg, rowDualSeg);
 				if (!HighsCApi.isOkOrWarning(solutionStatus))
 					return LpSolveResult.failed();
@@ -171,7 +169,7 @@ public final class HighsLpModel implements LpModel {
 	private void applyOptions() {
 		if (!optionsDirty)
 			return;
-		try (Arena arena = Arena.ofConfined()) {
+		try (HighsCApi.NativeArena arena = HighsCApi.openArena()) {
 			HighsCApi.setBoolOption(highs, arena, "output_flag", false);
 			HighsCApi.setDoubleOption(highs, arena, "infinite_bound", HIGHS_INF);
 			HighsCApi.setDoubleOption(highs, arena, "infinite_cost", HIGHS_INF);
@@ -242,16 +240,16 @@ public final class HighsLpModel implements LpModel {
 			}
 		}
 
-		try (Arena arena = Arena.ofConfined()) {
-			MemorySegment colCostSeg = allocateDoubles(arena, colCost);
-			MemorySegment colLowerSeg = allocateDoubles(arena, colLower);
-			MemorySegment colUpperSeg = allocateDoubles(arena, colUpper);
-			MemorySegment rowLowerSeg = allocateDoubles(arena, rowLower);
-			MemorySegment rowUpperSeg = allocateDoubles(arena, rowUpper);
-			MemorySegment aStartSeg = allocateLongs(arena, aStart);
-			MemorySegment aIndexSeg = numNz == 0 ? MemorySegment.NULL : allocateLongs(arena, aIndex);
-			MemorySegment aValueSeg = numNz == 0 ? MemorySegment.NULL : allocateDoubles(arena, aValue);
-			MemorySegment integralitySeg = integerVariables ? allocateLongs(arena, integralityVector()) : MemorySegment.NULL;
+		try (HighsCApi.NativeArena arena = HighsCApi.openArena()) {
+			Object colCostSeg = allocateDoubles(arena, colCost);
+			Object colLowerSeg = allocateDoubles(arena, colLower);
+			Object colUpperSeg = allocateDoubles(arena, colUpper);
+			Object rowLowerSeg = allocateDoubles(arena, rowLower);
+			Object rowUpperSeg = allocateDoubles(arena, rowUpper);
+			Object aStartSeg = allocateLongs(arena, aStart);
+			Object aIndexSeg = numNz == 0 ? HighsCApi.nullSegment() : allocateLongs(arena, aIndex);
+			Object aValueSeg = numNz == 0 ? HighsCApi.nullSegment() : allocateDoubles(arena, aValue);
+			Object integralitySeg = integerVariables ? allocateLongs(arena, integralityVector()) : HighsCApi.nullSegment();
 
 			long clearStatus = HighsCApi.clearModel(highs);
 			if (!HighsCApi.isOkOrWarning(clearStatus))
@@ -338,33 +336,20 @@ public final class HighsLpModel implements LpModel {
 		return primal < mid ? lower : upper;
 	}
 
-	private static double[] readDoubles(MemorySegment segment, int size) {
-		double[] values = new double[size];
-		for (int i = 0; i < size; i++)
-			values[i] = segment.get(HighsCApi.C_DOUBLE, i * HighsCApi.C_DOUBLE.byteSize());
-		return values;
+	private static double[] readDoubles(Object segment, int size) {
+		return HighsCApi.readDoubles(segment, size);
 	}
 
-	private static MemorySegment allocateDoubles(Arena arena, int size) {
-		return size == 0 ? MemorySegment.NULL : arena.allocate(HighsCApi.C_DOUBLE, size);
+	private static Object allocateDoubles(HighsCApi.NativeArena arena, int size) {
+		return HighsCApi.allocateDoubles(arena, size);
 	}
 
-	private static MemorySegment allocateDoubles(Arena arena, double[] values) {
-		if (values.length == 0)
-			return MemorySegment.NULL;
-		MemorySegment segment = arena.allocate(HighsCApi.C_DOUBLE, values.length);
-		for (int i = 0; i < values.length; i++)
-			segment.set(HighsCApi.C_DOUBLE, i * HighsCApi.C_DOUBLE.byteSize(), values[i]);
-		return segment;
+	private static Object allocateDoubles(HighsCApi.NativeArena arena, double[] values) {
+		return HighsCApi.allocateDoubles(arena, values);
 	}
 
-	private static MemorySegment allocateLongs(Arena arena, long[] values) {
-		if (values.length == 0)
-			return MemorySegment.NULL;
-		MemorySegment segment = arena.allocate(HighsCApi.C_LONG_LONG, values.length);
-		for (int i = 0; i < values.length; i++)
-			segment.set(HighsCApi.C_LONG_LONG, i * HighsCApi.C_LONG_LONG.byteSize(), values[i]);
-		return segment;
+	private static Object allocateLongs(HighsCApi.NativeArena arena, long[] values) {
+		return HighsCApi.allocateLongs(arena, values);
 	}
 
 	private static LpStatus mapStatus(long runStatus, long modelStatus) {
@@ -393,9 +378,9 @@ public final class HighsLpModel implements LpModel {
 	}
 
 	private static final class DestroyAction implements Runnable {
-		private final MemorySegment highs;
+		private final Object highs;
 
-		private DestroyAction(MemorySegment highs) {
+		private DestroyAction(Object highs) {
 			this.highs = highs;
 		}
 
