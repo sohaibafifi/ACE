@@ -416,8 +416,10 @@ public final class BenchmarkLpVsNoLp {
 		if (filter == null || filter.isEmpty())
 			return true;
 		String normalizedFilter = filter.toLowerCase(Locale.ROOT);
-		String normalizedSpec = spec.toLowerCase(Locale.ROOT);
-		return normalizedSpec.contains(normalizedFilter);
+		String normalizedDisplayName = displayName(spec, spec).toLowerCase(Locale.ROOT);
+		String normalizedFamily = familyName(normalizedDisplayName).toLowerCase(Locale.ROOT);
+		return normalizedFamily.equals(normalizedFilter) || normalizedDisplayName.equals(normalizedFilter)
+				|| normalizedDisplayName.startsWith(normalizedFilter + "-") || normalizedDisplayName.startsWith(normalizedFilter + "_");
 	}
 
 	private static List<String> expandSpec(String spec) {
