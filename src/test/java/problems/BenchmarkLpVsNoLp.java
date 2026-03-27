@@ -357,9 +357,10 @@ public final class BenchmarkLpVsNoLp {
 			runMeasurements(resolved, options, result);
 			results.add(result);
 			printInstanceSummary(result);
+			writeCsv(results, options, false);
 		}
 		printGlobalSummary(results);
-		writeCsv(results, options);
+		writeCsv(results, options, true);
 	}
 
 	private static Options parseOptions(String[] args) {
@@ -698,11 +699,12 @@ public final class BenchmarkLpVsNoLp {
 				+ "  tie " + equalNodesLpVsRootLp + ".");
 	}
 
-	private static void writeCsv(List<BenchmarkResult> results, Options options) {
+	private static void writeCsv(List<BenchmarkResult> results, Options options, boolean announce) {
 		Path csvFile = Paths.get(expandHome(options.csvPath));
 		try {
-			if (csvFile.getParent() != null)
-				Files.createDirectories(csvFile.getParent());
+			Path parent = csvFile.getParent();
+			if (parent != null)
+				Files.createDirectories(parent);
 			List<String> lines = new ArrayList<>();
 			lines.add(csvRow(
 					"instance",
@@ -803,9 +805,21 @@ public final class BenchmarkLpVsNoLp {
 						formatRelativeImprovement(lp.avgFiniteGap(), rootLp.avgFiniteGap(), true),
 						formatRelativeImprovement(lp.avgNodes(), rootLp.avgNodes(), true)));
 			}
-			Files.write(csvFile, lines, StandardCharsets.UTF_8);
-			System.out.println();
-			System.out.println("CSV saved to " + csvFile);
+			Path tempFile = Files.createTempFile(parent != null ? parent : Paths.get("."), csvFile.getFileName().toString(), ".tmp");
+			try {
+				Files.write(tempFile, lines, StandardCharsets.UTF_8);
+				try {
+					Files.move(tempFile, csvFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+				} catch (IOException atomicMoveFailure) {
+					Files.move(tempFile, csvFile, StandardCopyOption.REPLACE_EXISTING);
+				}
+			} finally {
+				Files.deleteIfExists(tempFile);
+			}
+			if (announce) {
+				System.out.println();
+				System.out.println("CSV saved to " + csvFile);
+			}
 		} catch (IOException e) {
 			throw new RuntimeException("Cannot write benchmark CSV: " + csvFile, e);
 		}
