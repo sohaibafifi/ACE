@@ -314,6 +314,13 @@ public abstract class Optimizer implements ObserverOnRuns {
 	public final void refineBoundsWithLpTree() {
 		if (!useLPBounds)
 			return;
+		if (problem.head.isTimeExpiredForCurrentInstance())
+			return;
+		// Respect the documented semantics of -lpf=0: root LP only.
+		// The LB tree performs additional local LP solves after incumbents are found,
+		// so it must stay disabled when periodic LP during search is disabled.
+		if (problem.head.control.optimization.lpSolveFrequency <= 0)
+			return;
 		// The LB tree is an incumbent-driven refinement. Before the first feasible
 		// solution, minBound/maxBound only reflect the raw objective domain, not a
 		// proven incumbent cutoff, so running the tree here can overstate what was

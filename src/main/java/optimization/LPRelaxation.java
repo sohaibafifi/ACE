@@ -214,11 +214,15 @@ public final class LPRelaxation {
 			return LpSolveResult.invalid();
 
 		try {
+			long effectiveTimeLimitMs = effectiveLpTimeLimitMs();
+			if (effectiveTimeLimitMs < 0L)
+				return LpSolveResult.failed();
+			model.setTimeLimitMs(effectiveTimeLimitMs);
 			long start = System.currentTimeMillis();
 			LpSolveResult result = model.solve();
 			if (!result.status.isOptimal()) {
 				long elapsed = System.currentTimeMillis() - start;
-				if (problem.head.control.general.verbose > 0) {
+				if (shouldLogSolve(result, atRoot, elapsed)) {
 					String location = atRoot ? "root" : "local";
 					double rawValue = result.objectiveValue;
 					String value = Double.isFinite(rawValue) ? ", objective: " + rawValue : "";
@@ -237,7 +241,7 @@ public final class LPRelaxation {
 			}
 
 			long elapsed = System.currentTimeMillis() - start;
-			if (problem.head.control.general.verbose > 0) {
+			if (shouldLogSolve(result, atRoot, elapsed)) {
 				String location = atRoot ? "root" : "local";
 				String value = result.status.isOptimal() ? ", objective: " + result.objectiveValue : "";
 				String bound = result.hasObjectiveBound() ? ", bound: " + result.objectiveBound : "";
@@ -258,6 +262,8 @@ public final class LPRelaxation {
 
 		int totalTightenings = 0;
 		for (int round = 0; round < MAX_REDUCED_COST_ROUNDS; round++) {
+			if (problem.head.isTimeExpiredForCurrentInstance())
+				break;
 			if (!result.hasObjectiveBound() || !result.hasReducedCosts())
 				break;
 
@@ -280,6 +286,31 @@ public final class LPRelaxation {
 		if (totalTightenings > 0 && problem.head.control.general.verbose > 0)
 			Kit.log.config("LP reduced-cost tightenings: " + totalTightenings);
 		return result;
+	}
+
+	private long effectiveLpTimeLimitMs() {
+		long limit = lpTimeoutMs > 0L ? lpTimeoutMs : Long.MAX_VALUE;
+		long globalTimeoutMs = problem.head.control.general.timeout;
+		if (globalTimeoutMs != Long.MAX_VALUE) {
+			long remainingMs = globalTimeoutMs - problem.head.instanceStopwatch.wckTime();
+			if (remainingMs <= 0L)
+				return -1L;
+			limit = Math.min(limit, remainingMs);
+		}
+		return limit == Long.MAX_VALUE ? 0L : limit;
+	}
+
+	private boolean shouldLogSolve(LpSolveResult result, boolean atRoot, long elapsedMs) {
+		int verbose = problem.head.control.general.verbose;
+		if (verbose <= 0)
+			return false;
+		if (atRoot)
+			return true;
+		if (verbose > 1)
+			return true;
+		if (!result.hasObjectiveBound())
+			return true;
+		return elapsedMs >= 10;
 	}
 
 	private int separateCuts(double[] values) {

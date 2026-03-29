@@ -201,7 +201,7 @@ final class LbTreeSearch {
 			nodes.get(0).updateObjective(rootState.bound, minimization);
 			publishFromRoot();
 
-			while (!stop && !treeClosed()) {
+			while (!stop && !treeClosed() && !optimizer.problem.head.isTimeExpiredForCurrentInstance()) {
 				Selection selection = selectOpenNode();
 				if (selection == null)
 					break;
@@ -272,7 +272,7 @@ final class LbTreeSearch {
 		ArrayList<DiveDecision> decisions = new ArrayList<>();
 		BranchState state = startState;
 
-		while (!stop) {
+		while (!stop && !optimizer.problem.head.isTimeExpiredForCurrentInstance()) {
 			Decision decision = chooseDecision(state.lpValues);
 			if (decision == null)
 				return null;
