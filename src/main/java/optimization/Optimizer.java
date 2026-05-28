@@ -353,7 +353,8 @@ public abstract class Optimizer implements ObserverOnRuns {
 		if (!lpRelaxation.isFullyLinearizedConstraints())
 			return;
 
-		LbTreeSearch tree = new LbTreeSearch(this, lpRelaxation, incumbentCutoff, nodeLimit);
+		int maxDiveDepth = problem.head.control.optimization.lbTreeMaxDiveDepth;
+		LbTreeSearch tree = new LbTreeSearch(this, lpRelaxation, incumbentCutoff, nodeLimit, maxDiveDepth);
 		Long treeBound = tree.search();
 		if (treeBound == null)
 			return;

@@ -523,6 +523,8 @@ public final class Control {
 				"Must we run the LP lower-bound proof tree after a finite incumbent is known? (opt-in; off by default)");
 		public final int lbTreeMaxNodes = addI("lbTreeMaxNodes", "lbtn", 31,
 				"Maximum number of LP lower-bound tree nodes explored at root after a finite incumbent is known (0 disables)");
+		public final int lbTreeMaxDiveDepth = addI("lbTreeMaxDiveDepth", "lbtdd", 64,
+				"Maximum decisions collected in a single LB-tree dive before abandoning it (each step solves an LP; 0=unbounded)");
 
 
 		// public final boolean discardObjective = addB("discardObjective", "do", false, "Discard the objective if any");

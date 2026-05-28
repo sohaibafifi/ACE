@@ -154,6 +154,7 @@ final class LbTreeSearch {
 	private final boolean minimization;
 	private final long incumbentCutoff;
 	private final int nodeLimit;
+	private final int maxDiveDepth;
 
 	private final boolean hasLp;
 	private final boolean exactLpModel;
@@ -162,15 +163,17 @@ final class LbTreeSearch {
 
 	private long publishedBound;
 	private int createdNodes;
+	private int closures;
 	private boolean stop;
 
-	LbTreeSearch(Optimizer optimizer, LPRelaxation relaxation, long incumbentCutoff, int nodeLimit) {
+	LbTreeSearch(Optimizer optimizer, LPRelaxation relaxation, long incumbentCutoff, int nodeLimit, int maxDiveDepth) {
 		this.optimizer = optimizer;
 		this.solver = optimizer.problem.solver;
 		this.relaxation = relaxation;
 		this.minimization = optimizer.minimization;
 		this.incumbentCutoff = incumbentCutoff;
 		this.nodeLimit = nodeLimit;
+		this.maxDiveDepth = maxDiveDepth;
 		this.hasLp = relaxation != null && relaxation.isViable();
 		this.exactLpModel = hasLp && relaxation.isFullyLinearizedConstraints();
 	}
@@ -201,7 +204,27 @@ final class LbTreeSearch {
 			nodes.get(0).updateObjective(rootState.bound, minimization);
 			publishFromRoot();
 
+			// Guard against non-progressing spins: an iteration that neither creates a
+			// node, improves the published bound, nor closes a branch is wasted work
+			// (e.g. replayPath keeps re-selecting the same node). Bound the number of
+			// consecutive wasted iterations so the tree cannot burn the time budget
+			// re-deriving the same state. Stopping early is sound: the published bound
+			// is valid whenever we stop.
+			int maxStall = Math.max(16, nodeLimit * 4);
+			int stall = 0;
+			int prevNodes = -1;
+			long prevBound = Long.MIN_VALUE;
+			int prevClosures = -1;
 			while (!stop && !treeClosed() && !optimizer.problem.head.isTimeExpiredForCurrentInstance()) {
+				if (createdNodes == prevNodes && publishedBound == prevBound && closures == prevClosures) {
+					if (++stall >= maxStall)
+						break;
+				} else {
+					stall = 0;
+					prevNodes = createdNodes;
+					prevBound = publishedBound;
+					prevClosures = closures;
+				}
 				Selection selection = selectOpenNode();
 				if (selection == null)
 					break;
@@ -273,6 +296,13 @@ final class LbTreeSearch {
 		BranchState state = startState;
 
 		while (!stop && !optimizer.problem.head.isTimeExpiredForCurrentInstance()) {
+			// Each dive step solves an LP (with reduced-cost fixing). An unbounded dive
+			// can assign every variable down to a leaf, spending one LP solve per level
+			// and then be discarded if it never crosses the incumbent. Cap the depth so
+			// a single dive cannot starve the time budget; abandoning it is sound (the
+			// branch simply stays open for a later, shallower attempt).
+			if (maxDiveDepth > 0 && decisions.size() >= maxDiveDepth)
+				return null;
 			Decision decision = chooseDecision(state.lpValues);
 			if (decision == null)
 				return null;
@@ -296,6 +326,26 @@ final class LbTreeSearch {
 	}
 
 	private CompressionResult compressDive(List<Integer> path, Boolean firstBranch, List<DiveDecision> decisions, long threshold) {
+		// The incremental variant establishes the node base once and reuses it for
+		// every candidate, avoiding a full root reset + arc-consistency rebuild per
+		// removal attempt. It is only sound when all reusable decisions create their
+		// own restorable trail level (assignments). ACE cannot pop a lone refutation
+		// level, so dives that contain a refutation fall back to root replay.
+		if (isIncrementalCompressionEligible(firstBranch, decisions))
+			return compressDiveIncremental(path, firstBranch, decisions, threshold);
+		return compressDiveByRootReplay(path, firstBranch, decisions, threshold);
+	}
+
+	private boolean isIncrementalCompressionEligible(Boolean firstBranch, List<DiveDecision> decisions) {
+		if (firstBranch != null && !firstBranch.booleanValue())
+			return false;
+		for (DiveDecision decision : decisions)
+			if (!decision.trueBranch)
+				return false;
+		return true;
+	}
+
+	private CompressionResult compressDiveByRootReplay(List<Integer> path, Boolean firstBranch, List<DiveDecision> decisions, long threshold) {
 		ArrayList<DiveDecision> best = new ArrayList<>(decisions);
 		Long bestBound = replayDive(path, firstBranch, best, threshold);
 		if (bestBound == null)
@@ -312,6 +362,98 @@ final class LbTreeSearch {
 				i++;
 		}
 		return new CompressionResult(best, bestBound);
+	}
+
+	private CompressionResult compressDiveIncremental(List<Integer> path, Boolean firstBranch, List<DiveDecision> decisions, long threshold) {
+		// Establish the node base a single time: root + recorded path (+ the expanded
+		// branch when present). All candidates are then applied and undone on top of
+		// this base via the trail.
+		if (!resetToRootState())
+			return new CompressionResult(new ArrayList<>(), infeasibleProofBound());
+		if (!replayKnownPath(path))
+			return null;
+		Node active = nodes.get(path.get(path.size() - 1));
+		if (firstBranch != null) {
+			Boolean status = applyRecordedDecision(active.decisionVariable, active.decisionValueIndex, true);
+			if (status == null)
+				return null;
+			if (!status.booleanValue())
+				return new CompressionResult(new ArrayList<>(), infeasibleProofBound());
+		}
+		int baseDepth = solver.depth();
+
+		ArrayList<DiveDecision> best = new ArrayList<>(decisions);
+		Long bestBound = replayDiveFromBase(baseDepth, best, threshold);
+		if (bestBound == null)
+			return null;
+
+		for (int i = 0; i < best.size();) {
+			ArrayList<DiveDecision> candidate = new ArrayList<>(best);
+			candidate.remove(i);
+			Long candidateBound = replayDiveFromBase(baseDepth, candidate, threshold);
+			if (candidateBound != null) {
+				best = candidate;
+				bestBound = candidateBound;
+			} else
+				i++;
+		}
+		return new CompressionResult(best, bestBound);
+	}
+
+	// Applies decisions (all assignments) on top of the current base state, computes
+	// the resulting objective bound, then unwinds back to baseDepth. Mirrors the
+	// tail of replayDive but never resets to the root and never mutates persistent
+	// domains through reduced-cost fixing (so candidates do not interfere).
+	private Long replayDiveFromBase(int baseDepth, List<DiveDecision> decisions, long threshold) {
+		boolean invalid = false;
+		boolean infeasible = false;
+		for (DiveDecision decision : decisions) {
+			Boolean status = applyRecordedDecision(decision.variableNum, decision.valueIndex, true);
+			if (status == null) {
+				invalid = true;
+				break;
+			}
+			if (!status.booleanValue()) {
+				infeasible = true;
+				break;
+			}
+		}
+		Long out;
+		if (invalid)
+			out = null;
+		else if (infeasible)
+			out = infeasibleProofBound();
+		else {
+			BranchState state = currentBranchStateWithoutFixing();
+			out = crossedThreshold(state.bound, threshold) ? state.bound : null;
+		}
+		backtrackToDepth(baseDepth);
+		return out;
+	}
+
+	private void backtrackToDepth(int baseDepth) {
+		while (solver.depth() > baseDepth)
+			solver.backtrack(solver.futVars.lastPast());
+	}
+
+	// Same bound computation as currentBranchState but without reduced-cost fixing.
+	// Reduced-cost fixing removes CP values in place; during incremental compression
+	// the base state is shared across candidates, so a fixing applied for one
+	// candidate must not leak into the next. The objective bound from solve() is a
+	// certified dual bound on its own, so dropping fixing keeps publication sound.
+	private BranchState currentBranchStateWithoutFixing() {
+		long cpBound = minimization ? optimizer.ctr.minCurrentObjectiveValue() : optimizer.ctr.maxCurrentObjectiveValue();
+		if (hasLp) {
+			relaxation.updateDomains();
+			LpSolveResult lpResult = relaxation.solve(false);
+			if (lpResult.hasObjectiveBound()) {
+				long lpBound = relaxation.roundObjectiveBound(lpResult.objectiveBound, minimization);
+				cpBound = minimization ? Math.max(cpBound, lpBound) : Math.min(cpBound, lpBound);
+			} else if (lpResult.isInfeasible() && exactLpModel) {
+				return new BranchState(infeasibleProofBound(), null);
+			}
+		}
+		return new BranchState(cpBound, null);
 	}
 
 	private Long replayDive(List<Integer> path, Boolean firstBranch, List<DiveDecision> decisions, long threshold) {
@@ -711,6 +853,7 @@ final class LbTreeSearch {
 	}
 
 	private void markBranchAsInfeasible(Node node, boolean trueBranch) {
+		closures++;
 		int child = trueBranch ? node.trueChild : node.falseChild;
 		if (trueBranch) {
 			node.updateTrueObjective(infeasibleProofBound(), minimization);
