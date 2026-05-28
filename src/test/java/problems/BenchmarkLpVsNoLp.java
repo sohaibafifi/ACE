@@ -53,17 +53,19 @@ public final class BenchmarkLpVsNoLp {
 	private static final Map<String, Path> EXTRACTED_RESOURCES = new LinkedHashMap<>();
 
 	private enum Mode {
-		CP(false, false, "CP"),
-		CP_ROOT_LP(true, false, "CP+ROOTLP"),
-		CP_LP(true, true, "CP+LP");
+		CP(false, false, false, "CP"),
+		CP_ROOT_LP(true, false, false, "CP+ROOTLP"),
+		CP_LP(true, false, true, "CP+LBTREE");
 
 		final boolean lpEnabled;
 		final boolean searchLpEnabled;
+		final boolean lbTreeEnabled;
 		final String label;
 
-		Mode(boolean lpEnabled, boolean searchLpEnabled, String label) {
+		Mode(boolean lpEnabled, boolean searchLpEnabled, boolean lbTreeEnabled, String label) {
 			this.lpEnabled = lpEnabled;
 			this.searchLpEnabled = searchLpEnabled;
+			this.lbTreeEnabled = lbTreeEnabled;
 			this.label = label;
 		}
 	}
@@ -331,7 +333,7 @@ public final class BenchmarkLpVsNoLp {
 	public static void main(String[] args) {
 		Options options = parseOptions(args);
 		List<String> instances = collectInstances(options);
-		System.out.println("Benchmark CP vs CP+ROOTLP vs CP+LP");
+		System.out.println("Benchmark CP vs CP+ROOTLP vs CP+LBTREE");
 		System.out.println("focus=proof-of-optimality root-bound gap nodes");
 		System.out.println("iterations=" + options.iterations + " warmup=" + options.warmup + " commonArgs="
 				+ (options.solverArgs.isEmpty() ? "[]" : options.solverArgs));
@@ -495,10 +497,14 @@ public final class BenchmarkLpVsNoLp {
 		tokens.add("-v=-1");
 		tokens.add("-lp=" + mode.lpEnabled);
 		tokens.add("-lpf=" + (mode.searchLpEnabled ? searchLpFrequency : 0));
+		tokens.add("-lbtree=" + mode.lbTreeEnabled);
 		if (mode.lpEnabled)
-			tokens.add("-lpt=100s");
+			// The LB tree solves the LP many times per incumbent; a large per-solve
+			// budget lets a single solve consume the whole remaining time. Cap it
+			// tightly for the tree mode; the single root solve can keep a large budget.
+			tokens.add(mode.lbTreeEnabled ? "-lpt=1s" : "-lpt=100s");
 		for (String arg : commonArgs) {
-			if (arg.startsWith("-lp=") || arg.startsWith("-lpf=") || (mode.lpEnabled && arg.startsWith("-lpt=")))
+			if (arg.startsWith("-lp=") || arg.startsWith("-lpf=") || arg.startsWith("-lbtree=") || (mode.lpEnabled && arg.startsWith("-lpt=")))
 				continue;
 			tokens.add(arg);
 		}
