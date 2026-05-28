@@ -316,10 +316,10 @@ public abstract class Optimizer implements ObserverOnRuns {
 			return;
 		if (problem.head.isTimeExpiredForCurrentInstance())
 			return;
-		// Respect the documented semantics of -lpf=0: root LP only.
-		// The LB tree performs additional local LP solves after incumbents are found,
-		// so it must stay disabled when periodic LP during search is disabled.
-		if (problem.head.control.optimization.lpSolveFrequency <= 0)
+		// The LB tree is an explicit opt-in (-lbtree). Root LP relaxation alone is the
+		// default shipped behavior; the tree performs many extra local LP solves and
+		// root replays after an incumbent, which can cost more time than it proves.
+		if (!problem.head.control.optimization.useLbTree)
 			return;
 		// The LB tree is an incumbent-driven refinement. Before the first feasible
 		// solution, minBound/maxBound only reflect the raw objective domain, not a

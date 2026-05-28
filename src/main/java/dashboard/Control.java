@@ -519,6 +519,8 @@ public final class Control {
 				"Timeout in milliseconds for each LP solve (<=0 means no timeout)");
 		public final boolean lpIntegerVariables = addB("lpIntegerVariables", "lpiv", false,
 				"Must we send LP variables to HiGHS as integer variables (test mode: this turns LP solves into MIP solves)?");
+		public final boolean useLbTree = addB("useLbTree", "lbtree", false,
+				"Must we run the LP lower-bound proof tree after a finite incumbent is known? (opt-in; off by default)");
 		public final int lbTreeMaxNodes = addI("lbTreeMaxNodes", "lbtn", 31,
 				"Maximum number of LP lower-bound tree nodes explored at root after a finite incumbent is known (0 disables)");
 
