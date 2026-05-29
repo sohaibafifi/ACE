@@ -1137,6 +1137,8 @@ public class Solver implements ObserverOnBacktracksSystematic {
 						// Periodically solve LP to tighten bounds during search
 						if (problem.optimizer != null) {
 							boolean lpConsistent = problem.optimizer.possiblyComputeLPBoundDuringSearch();
+							if (lpConsistent)
+								lpConsistent = problem.optimizer.possiblyPruneByDualBoundDuringSearch();
 							if (!lpConsistent) {
 								manageContradiction(null);
 								continue;

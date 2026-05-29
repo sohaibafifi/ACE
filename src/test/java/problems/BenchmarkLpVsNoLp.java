@@ -53,19 +53,22 @@ public final class BenchmarkLpVsNoLp {
 	private static final Map<String, Path> EXTRACTED_RESOURCES = new LinkedHashMap<>();
 
 	private enum Mode {
-		CP(false, false, false, "CP"),
-		CP_ROOT_LP(true, false, false, "CP+ROOTLP"),
-		CP_LP(true, false, true, "CP+LBTREE");
+		CP(false, false, false, false, "CP"),
+		CP_ROOT_LP(true, false, false, false, "CP+ROOTLP"),
+		CP_LP(true, false, true, false, "CP+LBTREE"),
+		CP_ANYTIME(true, false, false, true, "CP+ANYTIME");
 
 		final boolean lpEnabled;
 		final boolean searchLpEnabled;
 		final boolean lbTreeEnabled;
+		final boolean anytimeEnabled;
 		final String label;
 
-		Mode(boolean lpEnabled, boolean searchLpEnabled, boolean lbTreeEnabled, String label) {
+		Mode(boolean lpEnabled, boolean searchLpEnabled, boolean lbTreeEnabled, boolean anytimeEnabled, String label) {
 			this.lpEnabled = lpEnabled;
 			this.searchLpEnabled = searchLpEnabled;
 			this.lbTreeEnabled = lbTreeEnabled;
+			this.anytimeEnabled = anytimeEnabled;
 			this.label = label;
 		}
 	}
@@ -314,6 +317,7 @@ public final class BenchmarkLpVsNoLp {
 		final Aggregate cp = new Aggregate(Mode.CP);
 		final Aggregate cpRootLp = new Aggregate(Mode.CP_ROOT_LP);
 		final Aggregate cpLp = new Aggregate(Mode.CP_LP);
+		final Aggregate cpAnytime = new Aggregate(Mode.CP_ANYTIME);
 
 		BenchmarkResult(String spec, String displayName) {
 			this.spec = spec;
@@ -326,14 +330,16 @@ public final class BenchmarkLpVsNoLp {
 				return cp;
 			if (mode == Mode.CP_ROOT_LP)
 				return cpRootLp;
-			return cpLp;
+			if (mode == Mode.CP_LP)
+				return cpLp;
+			return cpAnytime;
 		}
 	}
 
 	public static void main(String[] args) {
 		Options options = parseOptions(args);
 		List<String> instances = collectInstances(options);
-		System.out.println("Benchmark CP vs CP+ROOTLP vs CP+LBTREE");
+		System.out.println("Benchmark CP vs CP+ROOTLP vs CP+LBTREE vs CP+ANYTIME");
 		System.out.println("focus=proof-of-optimality root-bound gap nodes");
 		System.out.println("iterations=" + options.iterations + " warmup=" + options.warmup + " commonArgs="
 				+ (options.solverArgs.isEmpty() ? "[]" : options.solverArgs));
@@ -498,13 +504,15 @@ public final class BenchmarkLpVsNoLp {
 		tokens.add("-lp=" + mode.lpEnabled);
 		tokens.add("-lpf=" + (mode.searchLpEnabled ? searchLpFrequency : 0));
 		tokens.add("-lbtree=" + mode.lbTreeEnabled);
+		tokens.add("-lpa=" + mode.anytimeEnabled);
 		if (mode.lpEnabled)
-			// The LB tree solves the LP many times per incumbent; a large per-solve
+			// The LB tree and anytime pruning solve the LP many times; a large per-solve
 			// budget lets a single solve consume the whole remaining time. Cap it
-			// tightly for the tree mode; the single root solve can keep a large budget.
-			tokens.add(mode.lbTreeEnabled ? "-lpt=1s" : "-lpt=100s");
+			// tightly for those modes; the single root solve can keep a large budget.
+			tokens.add(mode.lbTreeEnabled || mode.anytimeEnabled ? "-lpt=1s" : "-lpt=100s");
 		for (String arg : commonArgs) {
-			if (arg.startsWith("-lp=") || arg.startsWith("-lpf=") || arg.startsWith("-lbtree=") || (mode.lpEnabled && arg.startsWith("-lpt=")))
+			if (arg.startsWith("-lp=") || arg.startsWith("-lpf=") || arg.startsWith("-lbtree=") || arg.startsWith("-lpa=")
+					|| (mode.lpEnabled && arg.startsWith("-lpt=")))
 				continue;
 			tokens.add(arg);
 		}
@@ -565,8 +573,9 @@ public final class BenchmarkLpVsNoLp {
 		Aggregate cp = result.cp;
 		Aggregate rootLp = result.cpRootLp;
 		Aggregate lp = result.cpLp;
+		Aggregate anytime = result.cpAnytime;
 		String[] headers = { "mode", "proof", "sol", "best", "bounds", "root", "gap", "nodes", "wall", "search", "stop" };
-		int[] widths = { 10, 7, 5, 10, 17, 17, 10, 12, 8, 8, 6 };
+		int[] widths = { 11, 7, 5, 10, 17, 17, 10, 12, 8, 8, 6 };
 		boolean[] rightAligned = { false, false, false, true, false, false, true, true, true, true, false };
 		System.out.println(result.displayName);
 		System.out.println(fixedRow(headers, widths, rightAligned));
@@ -574,8 +583,10 @@ public final class BenchmarkLpVsNoLp {
 		System.out.println(row(cp, widths, rightAligned));
 		System.out.println(row(rootLp, widths, rightAligned));
 		System.out.println(row(lp, widths, rightAligned));
+		System.out.println(row(anytime, widths, rightAligned));
 		System.out.println(comparisonLine("rootlp-vs-cp", rootLp, cp));
-		System.out.println(comparisonLine("lp-vs-rootlp", lp, rootLp));
+		System.out.println(comparisonLine("lbtree-vs-rootlp", lp, rootLp));
+		System.out.println(comparisonLine("anytime-vs-rootlp", anytime, rootLp));
 		System.out.println();
 	}
 
@@ -596,113 +607,71 @@ public final class BenchmarkLpVsNoLp {
 	}
 
 	private static void printGlobalSummary(List<BenchmarkResult> results) {
-		int cpProved = 0;
-		int rootLpProved = 0;
-		int lpProved = 0;
-		int rootLpOnlyVsCp = 0;
-		int cpOnlyVsRootLp = 0;
-		int lpOnlyVsRootLp = 0;
-		int rootLpOnlyVsLp = 0;
-		int rootLpBetterGapVsCp = 0;
-		int cpBetterGapVsRootLp = 0;
-		int equalGapRootLpVsCp = 0;
-		int lpBetterGapVsRootLp = 0;
-		int rootLpBetterGapVsLp = 0;
-		int equalGapLpVsRootLp = 0;
-		int rootLpBetterNodesVsCp = 0;
-		int cpBetterNodesVsRootLp = 0;
-		int equalNodesRootLpVsCp = 0;
-		int lpBetterNodesVsRootLp = 0;
-		int rootLpBetterNodesVsLp = 0;
-		int equalNodesLpVsRootLp = 0;
+		int total = results.size();
+		int cpProved = 0, rootLpProved = 0, lpProved = 0, anytimeProved = 0;
+		// proofs gained/lost relative to ROOTLP (the shipped default), for the two search-time methods
+		int lpOnlyVsRootLp = 0, rootLpOnlyVsLp = 0, anytimeOnlyVsRootLp = 0, rootLpOnlyVsAnytime = 0;
+		// node win/loss vs ROOTLP among instances both solved without error
+		int lpFewerNodes = 0, lpMoreNodes = 0, anytimeFewerNodes = 0, anytimeMoreNodes = 0;
+
 		int instanceWidth = Math.max("instance".length(),
 				results.stream().map(result -> result.displayName.length()).max(Integer::compareTo).orElse(0));
 		int familyWidth = Math.max("family".length(), results.stream().map(result -> result.family.length()).max(Integer::compareTo).orElse(0));
-		String[] headers = { padRight("instance", instanceWidth), padRight("family", familyWidth), "CP", "ROOTLP", "LP", "CP gap", "ROOT gap", "LP gap",
-				"CP nodes", "ROOT nodes", "LP nodes" };
-		int[] widths = { instanceWidth, familyWidth, 4, 6, 4, 10, 10, 10, 12, 12, 12 };
-		boolean[] rightAligned = { false, false, false, false, false, true, true, true, true, true, true };
+		String[] headers = { padRight("instance", instanceWidth), padRight("family", familyWidth), "CP", "ROOTLP", "LBTREE", "ANYTIME", "ROOT nodes",
+				"LBTREE nodes", "ANYTIME nodes" };
+		int[] widths = { instanceWidth, familyWidth, 4, 6, 6, 7, 12, 12, 13 };
+		boolean[] rightAligned = { false, false, false, false, false, false, true, true, true };
 
 		System.out.println("Summary");
 		System.out.println(fixedRow(headers, widths, rightAligned));
 		System.out.println(rule(widths));
 		for (BenchmarkResult result : results) {
-			Aggregate cp = result.cp;
-			Aggregate rootLp = result.cpRootLp;
-			Aggregate lp = result.cpLp;
-			boolean cpOpt = cp.alwaysProvedOptimum();
-			boolean rootLpOpt = rootLp.alwaysProvedOptimum();
-			boolean lpOpt = lp.alwaysProvedOptimum();
+			Aggregate cp = result.cp, rootLp = result.cpRootLp, lp = result.cpLp, anytime = result.cpAnytime;
+			boolean cpOpt = cp.alwaysProvedOptimum(), rootLpOpt = rootLp.alwaysProvedOptimum();
+			boolean lpOpt = lp.alwaysProvedOptimum(), anytimeOpt = anytime.alwaysProvedOptimum();
 			if (cpOpt)
 				cpProved++;
 			if (rootLpOpt)
 				rootLpProved++;
 			if (lpOpt)
 				lpProved++;
-			if (rootLpOpt && !cpOpt)
-				rootLpOnlyVsCp++;
-			if (!rootLpOpt && cpOpt)
-				cpOnlyVsRootLp++;
+			if (anytimeOpt)
+				anytimeProved++;
 			if (lpOpt && !rootLpOpt)
 				lpOnlyVsRootLp++;
 			if (!lpOpt && rootLpOpt)
 				rootLpOnlyVsLp++;
+			if (anytimeOpt && !rootLpOpt)
+				anytimeOnlyVsRootLp++;
+			if (!anytimeOpt && rootLpOpt)
+				rootLpOnlyVsAnytime++;
 
-			double cpGap = cp.avgFiniteGap();
-			double rootLpGap = rootLp.avgFiniteGap();
-			double lpGap = lp.avgFiniteGap();
-			double cpNodes = cp.avgNodes();
 			double rootLpNodes = rootLp.avgNodes();
-			double lpNodes = lp.avgNodes();
-			if (!rootLp.hasFailures() && !cp.hasFailures()) {
-				if (rootLpGap < cpGap)
-					rootLpBetterGapVsCp++;
-				else if (rootLpGap > cpGap)
-					cpBetterGapVsRootLp++;
-				else
-					equalGapRootLpVsCp++;
-
-				if (rootLpNodes < cpNodes)
-					rootLpBetterNodesVsCp++;
-				else if (rootLpNodes > cpNodes)
-					cpBetterNodesVsRootLp++;
-				else
-					equalNodesRootLpVsCp++;
-			}
 			if (!lp.hasFailures() && !rootLp.hasFailures()) {
-				if (lpGap < rootLpGap)
-					lpBetterGapVsRootLp++;
-				else if (lpGap > rootLpGap)
-					rootLpBetterGapVsLp++;
-				else
-					equalGapLpVsRootLp++;
-
-				if (lpNodes < rootLpNodes)
-					lpBetterNodesVsRootLp++;
-				else if (lpNodes > rootLpNodes)
-					rootLpBetterNodesVsLp++;
-				else
-					equalNodesLpVsRootLp++;
+				if (lp.avgNodes() < rootLpNodes)
+					lpFewerNodes++;
+				else if (lp.avgNodes() > rootLpNodes)
+					lpMoreNodes++;
+			}
+			if (!anytime.hasFailures() && !rootLp.hasFailures()) {
+				if (anytime.avgNodes() < rootLpNodes)
+					anytimeFewerNodes++;
+				else if (anytime.avgNodes() > rootLpNodes)
+					anytimeMoreNodes++;
 			}
 
-			String[] values = { result.displayName, result.family, cp.proofLabel(), rootLp.proofLabel(), lp.proofLabel(), cp.gapLabel(), rootLp.gapLabel(),
-					lp.gapLabel(), formatCount(cpNodes), formatCount(rootLpNodes), formatCount(lpNodes) };
+			String[] values = { result.displayName, result.family, cp.proofLabel(), rootLp.proofLabel(), lp.proofLabel(), anytime.proofLabel(),
+					formatCount(rootLpNodes), formatCount(lp.avgNodes()), formatCount(anytime.avgNodes()) };
 			System.out.println(fixedRow(values, widths, rightAligned));
 		}
 
 		System.out.println();
-		System.out.println("CP proves optimum on " + cpProved + "/" + results.size() + " instance(s); CP+ROOTLP on " + rootLpProved + "/" + results.size()
-				+ "; CP+LP on " + lpProved + "/" + results.size() + ".");
-		System.out.println("CP+ROOTLP-only proofs vs CP: " + rootLpOnlyVsCp + "  CP-only vs CP+ROOTLP: " + cpOnlyVsRootLp + ".");
-		System.out.println("CP+LP-only proofs vs CP+ROOTLP: " + lpOnlyVsRootLp + "  CP+ROOTLP-only vs CP+LP: " + rootLpOnlyVsLp + ".");
-		System.out.println("Smaller final gap (CP+ROOTLP vs CP): CP+ROOTLP " + rootLpBetterGapVsCp + "  CP " + cpBetterGapVsRootLp + "  tie "
-				+ equalGapRootLpVsCp + ".");
-		System.out.println("Fewer explored nodes (CP+ROOTLP vs CP): CP+ROOTLP " + rootLpBetterNodesVsCp + "  CP " + cpBetterNodesVsRootLp + "  tie "
-				+ equalNodesRootLpVsCp + ".");
-		System.out.println("Smaller final gap (CP+LP vs CP+ROOTLP): CP+LP " + lpBetterGapVsRootLp + "  CP+ROOTLP " + rootLpBetterGapVsLp + "  tie "
-				+ equalGapLpVsRootLp + ".");
-		System.out.println("Fewer explored nodes (CP+LP vs CP+ROOTLP): CP+LP " + lpBetterNodesVsRootLp + "  CP+ROOTLP " + rootLpBetterNodesVsLp
-				+ "  tie " + equalNodesLpVsRootLp + ".");
+		System.out.println("Proofs of optimum (out of " + total + "): CP " + cpProved + "  CP+ROOTLP " + rootLpProved + "  CP+LBTREE " + lpProved
+				+ "  CP+ANYTIME " + anytimeProved + ".");
+		System.out.println("CP+LBTREE vs CP+ROOTLP: +" + lpOnlyVsRootLp + " proofs / -" + rootLpOnlyVsLp + " proofs; fewer nodes " + lpFewerNodes
+				+ "  more nodes " + lpMoreNodes + ".");
+		System.out.println("CP+ANYTIME vs CP+ROOTLP: +" + anytimeOnlyVsRootLp + " proofs / -" + rootLpOnlyVsAnytime + " proofs; fewer nodes "
+				+ anytimeFewerNodes + "  more nodes " + anytimeMoreNodes + ".");
 	}
 
 	private static void writeCsv(List<BenchmarkResult> results, Options options, boolean announce) {
@@ -753,16 +722,31 @@ public final class BenchmarkLpVsNoLp {
 					"lp_search_seconds",
 					"lp_stop",
 					"lp_failed",
+					"anytime_proof",
+					"anytime_solution",
+					"anytime_best",
+					"anytime_bounds",
+					"anytime_root_bounds",
+					"anytime_gap",
+					"anytime_nodes",
+					"anytime_wall_seconds",
+					"anytime_search_seconds",
+					"anytime_stop",
+					"anytime_failed",
 					"proof_status_rootlp_vs_cp",
 					"proof_status_lp_vs_rootlp",
+					"proof_status_anytime_vs_rootlp",
 					"gap_improvement_rootlp_vs_cp",
 					"nodes_improvement_rootlp_vs_cp",
 					"gap_improvement_lp_vs_rootlp",
-					"nodes_improvement_lp_vs_rootlp"));
+					"nodes_improvement_lp_vs_rootlp",
+					"gap_improvement_anytime_vs_rootlp",
+					"nodes_improvement_anytime_vs_rootlp"));
 			for (BenchmarkResult result : results) {
 				Aggregate cp = result.cp;
 				Aggregate rootLp = result.cpRootLp;
 				Aggregate lp = result.cpLp;
+				Aggregate anytime = result.cpAnytime;
 				lines.add(csvRow(
 						result.displayName,
 						result.family,
@@ -804,12 +788,26 @@ public final class BenchmarkLpVsNoLp {
 						formatDouble(lp.avgSearchSeconds()),
 						compactStopping(lp.stoppingLabel()),
 						Boolean.toString(lp.hasFailures()),
+						anytime.proofLabel(),
+						anytime.solutionLabel(),
+						anytime.bestLabel(),
+						anytime.boundsLabel(),
+						anytime.rootBoundsLabel(),
+						anytime.gapLabel(),
+						formatCount(anytime.avgNodes()),
+						formatDouble(anytime.avgWallSeconds()),
+						formatDouble(anytime.avgSearchSeconds()),
+						compactStopping(anytime.stoppingLabel()),
+						Boolean.toString(anytime.hasFailures()),
 						proofStatusForCsv(rootLp, cp),
 						proofStatusForCsv(lp, rootLp),
+						proofStatusForCsv(anytime, rootLp),
 						formatRelativeImprovement(rootLp.avgFiniteGap(), cp.avgFiniteGap(), true),
 						formatRelativeImprovement(rootLp.avgNodes(), cp.avgNodes(), true),
 						formatRelativeImprovement(lp.avgFiniteGap(), rootLp.avgFiniteGap(), true),
-						formatRelativeImprovement(lp.avgNodes(), rootLp.avgNodes(), true)));
+						formatRelativeImprovement(lp.avgNodes(), rootLp.avgNodes(), true),
+						formatRelativeImprovement(anytime.avgFiniteGap(), rootLp.avgFiniteGap(), true),
+						formatRelativeImprovement(anytime.avgNodes(), rootLp.avgNodes(), true)));
 			}
 			Path tempFile = Files.createTempFile(parent != null ? parent : Paths.get("."), csvFile.getFileName().toString(), ".tmp");
 			try {

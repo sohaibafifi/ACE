@@ -515,6 +515,10 @@ public final class Control {
 				"Must we use LP relaxation for computing bounds and detecting optimality?");
 		public final int lpSolveFrequency = addI("lpSolveFrequency", "lpf", 0,
 				"LP solve frequency: 0=root only, N=every N nodes during search");
+		public final boolean useLpAnytime = addB("useLpAnytime", "lpa", false,
+				"Must we prune search subtrees with the LP certified dual bound during search? (opt-in; off by default)");
+		public final int lpAnytimeFrequency = addI("lpAnytimeFrequency", "lpaf", 200,
+				"Cheap anytime dual-bound prune every N assignments during search (requires -lpa)");
 		public final long lpTimeoutMs = addL("lpTimeoutMs", "lpt", 1_000L,
 				"Timeout in milliseconds for each LP solve (<=0 means no timeout)");
 		public final boolean lpIntegerVariables = addB("lpIntegerVariables", "lpiv", false,
@@ -525,6 +529,8 @@ public final class Control {
 				"Maximum number of LP lower-bound tree nodes explored at root after a finite incumbent is known (0 disables)");
 		public final int lbTreeMaxDiveDepth = addI("lbTreeMaxDiveDepth", "lbtdd", 64,
 				"Maximum decisions collected in a single LB-tree dive before abandoning it (each step solves an LP; 0=unbounded)");
+		public final int lbTreeMaxFailures = addI("lbTreeMaxFailures", "lbtmf", 4,
+				"Disable the LB tree after this many consecutive non-improving runs (0=never disable); runs also back off exponentially");
 
 
 		// public final boolean discardObjective = addB("discardObjective", "do", false, "Discard the objective if any");

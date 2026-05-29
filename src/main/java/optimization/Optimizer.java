@@ -49,6 +49,7 @@ public abstract class Optimizer implements ObserverOnRuns {
 	@Override
 	public void beforeRun() {
 		nodesSinceLastLP = 0;
+		nodesSinceLastAnytimeLP = 0;
 	}
 
 	@Override
@@ -168,6 +169,22 @@ public abstract class Optimizer implements ObserverOnRuns {
 	 * Counter for tracking nodes since last LP solve (for periodic LP solving).
 	 */
 	private int nodesSinceLastLP = 0;
+
+	/**
+	 * Counter for tracking assignments since the last anytime dual-bound prune.
+	 */
+	private int nodesSinceLastAnytimeLP = 0;
+
+	/**
+	 * LB-tree throttling. The tree runs in afterRun after an incumbent. On instances with many
+	 * incumbents where the root LP bound already matches the optimum (e.g. CoinsGrid), firing it per
+	 * incumbent is pure overhead. Back off exponentially on non-improving runs and disable after a few
+	 * consecutive failures; a run that raises the global bound resets the backoff so genuinely useful
+	 * trees (few incumbents, e.g. BusScheduling) keep firing.
+	 */
+	private int lbTreeConsecutiveFailures = 0;
+	private int incumbentsSinceLbTree = 0;
+	private boolean lbTreeDisabled = false;
 
 	public Optimizer(Problem pb, TypeOptimization opt, Optimizable clb, Optimizable cub) {
 		this.problem = pb;
@@ -331,6 +348,16 @@ public abstract class Optimizer implements ObserverOnRuns {
 		if (nodeLimit <= 0)
 			return;
 
+		// Throttle: skip this incumbent unless enough have passed since the last run, with the
+		// threshold doubling per consecutive non-improving run. Disable entirely after too many.
+		if (lbTreeDisabled)
+			return;
+		incumbentsSinceLbTree++;
+		int cooldown = 1 << Math.min(lbTreeConsecutiveFailures, 16);
+		if (incumbentsSinceLbTree < cooldown)
+			return;
+		incumbentsSinceLbTree = 0;
+
 		long incumbentCutoff = minimization ? maxBound : minBound;
 		if (minimization ? incumbentCutoff == Long.MAX_VALUE : incumbentCutoff == Long.MIN_VALUE)
 			return;
@@ -356,8 +383,10 @@ public abstract class Optimizer implements ObserverOnRuns {
 		int maxDiveDepth = problem.head.control.optimization.lbTreeMaxDiveDepth;
 		LbTreeSearch tree = new LbTreeSearch(this, lpRelaxation, incumbentCutoff, nodeLimit, maxDiveDepth);
 		Long treeBound = tree.search();
-		if (treeBound == null)
+		if (treeBound == null) {
+			registerLbTreeOutcome(false);
 			return;
+		}
 		long safeTreeBound = treeBound;
 		// If the improving subproblem is proved infeasible, the only globally safe
 		// publication is the incumbent itself (represented internally by
@@ -367,16 +396,33 @@ public abstract class Optimizer implements ObserverOnRuns {
 		if (!minimization && safeTreeBound < minBound)
 			safeTreeBound = minBound - 1;
 
+		boolean improved = false;
 		if (minimization) {
 			if (safeTreeBound > minBound) {
 				Kit.log.config("LB tree bound: " + safeTreeBound + " (was " + minBound + ", nodes=" + tree.exploredNodes() + ")");
 				minBound = safeTreeBound;
 				clb.limit(minBound);
+				improved = true;
 			}
 		} else if (safeTreeBound < maxBound) {
 			Kit.log.config("LB tree bound: " + safeTreeBound + " (was " + maxBound + ", nodes=" + tree.exploredNodes() + ")");
 			maxBound = safeTreeBound;
 			cub.limit(maxBound);
+			improved = true;
+		}
+		registerLbTreeOutcome(improved);
+	}
+
+	private void registerLbTreeOutcome(boolean improved) {
+		if (improved) {
+			lbTreeConsecutiveFailures = 0;
+			return;
+		}
+		lbTreeConsecutiveFailures++;
+		int maxFailures = problem.head.control.optimization.lbTreeMaxFailures;
+		if (maxFailures > 0 && lbTreeConsecutiveFailures >= maxFailures) {
+			lbTreeDisabled = true;
+			Kit.log.config("LB tree disabled after " + lbTreeConsecutiveFailures + " non-improving runs");
 		}
 	}
 	
@@ -396,6 +442,56 @@ public abstract class Optimizer implements ObserverOnRuns {
 			// Note: nodesSinceLastLP is reset to 0 in computeLPBound()
 		}
 		return true;
+	}
+
+	/**
+	 * Cheap anytime dual-bound pruning during search. Unlike {@link #computeLPBound()}, this does a
+	 * single LP solve with no reduced-cost fixing and no global-bound update: it only prunes the
+	 * current subtree. Soundness rests on two facts that hold for any LP relaxation, even when the
+	 * solve is interrupted before optimality:
+	 * <ul>
+	 * <li>an infeasible relaxation proves the current subtree infeasible (the relaxation contains the
+	 * feasible region);</li>
+	 * <li>the certified dual objective is a valid bound by weak duality (a lower bound for
+	 * minimization, an upper bound for maximization).</li>
+	 * </ul>
+	 *
+	 * @return false if the current subtree can be pruned, true otherwise
+	 */
+	public boolean possiblyPruneByDualBoundDuringSearch() {
+		if (!useLPBounds || !problem.head.control.optimization.useLpAnytime)
+			return true;
+		int frequency = problem.head.control.optimization.lpAnytimeFrequency;
+		if (frequency <= 0)
+			return true;
+		if (++nodesSinceLastAnytimeLP < frequency)
+			return true;
+		nodesSinceLastAnytimeLP = 0;
+
+		if (problem.head.isTimeExpiredForCurrentInstance())
+			return true;
+
+		if (lpRelaxation == null)
+			lpRelaxation = new LPRelaxation(problem);
+		if (!lpRelaxation.isBuilt())
+			lpRelaxation.buildModel();
+		else
+			lpRelaxation.updateDomains();
+		if (!lpRelaxation.isViable()) {
+			useLPBounds = false;
+			return true;
+		}
+
+		LpSolveResult result = lpRelaxation.solve(false);
+		if (result.isInfeasible())
+			return false;
+		if (!result.hasObjectiveBound())
+			return true;
+
+		long bound = lpRelaxation.roundObjectiveBound(result.objectiveBound, minimization);
+		if (minimization)
+			return bound <= maxBound; // prune when proven lower bound exceeds the incumbent
+		return bound >= minBound; // prune when proven upper bound is below the incumbent
 	}
 
 	protected abstract void shiftLimitWhenSuccess();
