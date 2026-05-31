@@ -176,6 +176,13 @@ public abstract class Optimizer implements ObserverOnRuns {
 	private int nodesSinceLastAnytimeLP = 0;
 
 	/**
+	 * Anytime pruning throttle: backoff doubles the solve interval per non-pruning solve; disabled
+	 * after too many. Keeps anytime active where it prunes, dormant where the root LP already suffices.
+	 */
+	private int anytimeBackoff = 0;
+	private boolean anytimeDisabled = false;
+
+	/**
 	 * LB-tree throttling. The tree runs in afterRun after an incumbent. On instances with many
 	 * incumbents where the root LP bound already matches the optimum (e.g. CoinsGrid), firing it per
 	 * incumbent is pure overhead. Back off exponentially on non-improving runs and disable after a few
@@ -459,12 +466,18 @@ public abstract class Optimizer implements ObserverOnRuns {
 	 * @return false if the current subtree can be pruned, true otherwise
 	 */
 	public boolean possiblyPruneByDualBoundDuringSearch() {
-		if (!useLPBounds || !problem.head.control.optimization.useLpAnytime)
+		if (!useLPBounds || !problem.head.control.optimization.useLpAnytime || anytimeDisabled)
 			return true;
 		int frequency = problem.head.control.optimization.lpAnytimeFrequency;
 		if (frequency <= 0)
 			return true;
-		if (++nodesSinceLastAnytimeLP < frequency)
+		// Exponential backoff: when a solve fails to prune, wait longer before the next one. On
+		// instances where the root LP already closed the gap, anytime never prunes, so it goes dormant
+		// instead of paying the per-node LP cost on every window (the failure mode that lost easy
+		// instances). A prune resets the backoff so it stays responsive where it helps.
+		nodesSinceLastAnytimeLP++;
+		long interval = (long) frequency << Math.min(anytimeBackoff, 16);
+		if (nodesSinceLastAnytimeLP < interval)
 			return true;
 		nodesSinceLastAnytimeLP = 0;
 
@@ -483,15 +496,35 @@ public abstract class Optimizer implements ObserverOnRuns {
 		}
 
 		LpSolveResult result = lpRelaxation.solve(false);
-		if (result.isInfeasible())
-			return false;
-		if (!result.hasObjectiveBound())
-			return true;
+		boolean pruned;
+		boolean consistent;
+		if (result.isInfeasible()) {
+			pruned = true;
+			consistent = false;
+		} else if (!result.hasObjectiveBound()) {
+			pruned = false;
+			consistent = true;
+		} else {
+			long bound = lpRelaxation.roundObjectiveBound(result.objectiveBound, minimization);
+			// prune when the proven bound crosses the incumbent (lower > max for min, upper < min for max)
+			consistent = minimization ? bound <= maxBound : bound >= minBound;
+			pruned = !consistent;
+		}
+		registerAnytimeOutcome(pruned);
+		return consistent;
+	}
 
-		long bound = lpRelaxation.roundObjectiveBound(result.objectiveBound, minimization);
-		if (minimization)
-			return bound <= maxBound; // prune when proven lower bound exceeds the incumbent
-		return bound >= minBound; // prune when proven upper bound is below the incumbent
+	private void registerAnytimeOutcome(boolean pruned) {
+		if (pruned) {
+			anytimeBackoff = 0;
+			return;
+		}
+		anytimeBackoff++;
+		int maxFailures = problem.head.control.optimization.lpAnytimeMaxFailures;
+		if (maxFailures > 0 && anytimeBackoff >= maxFailures) {
+			anytimeDisabled = true;
+			Kit.log.config("Anytime LP pruning disabled after " + anytimeBackoff + " non-pruning solves");
+		}
 	}
 
 	protected abstract void shiftLimitWhenSuccess();

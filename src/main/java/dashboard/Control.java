@@ -519,6 +519,8 @@ public final class Control {
 				"Must we prune search subtrees with the LP certified dual bound during search? (opt-in; off by default)");
 		public final int lpAnytimeFrequency = addI("lpAnytimeFrequency", "lpaf", 200,
 				"Cheap anytime dual-bound prune every N assignments during search (requires -lpa)");
+		public final int lpAnytimeMaxFailures = addI("lpAnytimeMaxFailures", "lpamf", 8,
+				"Disable anytime dual-bound pruning after this many consecutive non-pruning solves (0=never; intervals also back off exponentially)");
 		public final long lpTimeoutMs = addL("lpTimeoutMs", "lpt", 1_000L,
 				"Timeout in milliseconds for each LP solve (<=0 means no timeout)");
 		public final boolean lpIntegerVariables = addB("lpIntegerVariables", "lpiv", false,
